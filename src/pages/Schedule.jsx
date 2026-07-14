@@ -32,7 +32,7 @@ export default function Schedule({ events, setEvents, jobs, transactions, client
     const map = {}
     const push = (date, item) => { if (!map[date]) map[date] = []; map[date].push(item) }
 
-    events.forEach(ev => push(ev.date, { kind: 'event', label: ev.time ? `${ev.time} ${ev.title}` : ev.title }))
+    events.forEach(ev => push(ev.date, { kind: 'event', id: ev.id, label: ev.time ? `${ev.time} ${ev.title}` : ev.title }))
 
     jobs.forEach(j => {
       if (j.start) push(j.start, { kind: 'job', label: `Job starts: ${j.title}` })
@@ -111,7 +111,12 @@ export default function Schedule({ events, setEvents, jobs, transactions, client
               <EmptyState title="Nothing scheduled" subtitle="Add an appointment or reminder for this day." />
             )}
             {(itemsByDate[modalDate] || []).map((it, i) => (
-              <div key={i} className={`cal-chip cal-chip-${it.kind}`} style={{ marginBottom: 6 }}>{it.label}</div>
+              <div key={i} className={`cal-chip cal-chip-${it.kind}`} style={{ marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span>{it.label}</span>
+                {it.kind === 'event' && (
+                  <button className="icon-btn" onClick={() => removeEvent(it.id)} title="Delete appointment">✕</button>
+                )}
+              </div>
             ))}
 
             <div style={{ borderTop: '1px solid var(--paper-line)', marginTop: 16, paddingTop: 16 }}>
