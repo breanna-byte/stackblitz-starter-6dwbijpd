@@ -3,7 +3,7 @@ import { PageHeader, EmptyState } from '../components/ui'
 
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 }
 
-export default function Todos({ todos, setTodos }) {
+export default function Todos({ todos, addTodo, updateTodo, removeTodo }) {
   const [title, setTitle] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [priority, setPriority] = useState('medium')
@@ -11,16 +11,17 @@ export default function Todos({ todos, setTodos }) {
 
   function add() {
     if (!title.trim()) return
-    setTodos(prev => [...prev, { id: crypto.randomUUID(), title: title.trim(), done: false, dueDate, priority }])
+    addTodo({ title: title.trim(), done: false, dueDate, priority })
     setTitle(''); setDueDate(''); setPriority('medium')
   }
 
   function toggle(id) {
-    setTodos(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t))
+    const t = todos.find(t => t.id === id)
+    if (t) updateTodo(id, { done: !t.done })
   }
 
   function remove(id) {
-    setTodos(prev => prev.filter(t => t.id !== id))
+    removeTodo(id)
   }
 
   const visible = [...todos]

@@ -18,7 +18,7 @@ function toDateStr(year, month, day) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
-export default function Schedule({ events, setEvents, jobs, transactions, clientById }) {
+export default function Schedule({ events, addEvent: onAddEvent, removeEvent: onRemoveEvent, jobs, transactions, clientById }) {
   const today = new Date()
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [modalDate, setModalDate] = useState(null)
@@ -48,13 +48,13 @@ export default function Schedule({ events, setEvents, jobs, transactions, client
 
   function addEvent(date) {
     if (!form.title.trim()) return
-    setEvents(prev => [...prev, { id: crypto.randomUUID(), title: form.title.trim(), date, time: form.time, clientId: null }])
+    onAddEvent({ title: form.title.trim(), date, time: form.time, clientId: null })
     setForm({ title: '', time: '09:00' })
     setModalDate(null)
   }
 
   function removeEvent(id) {
-    setEvents(prev => prev.filter(e => e.id !== id))
+    onRemoveEvent(id)
   }
 
   const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate())

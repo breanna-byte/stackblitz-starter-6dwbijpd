@@ -6,11 +6,16 @@ import {
   computeEstimateTotals, formatCurrency,
 } from './lib/calc'
 import { computePL } from './lib/finance'
-import { loadSettings, saveSettings } from './lib/businessSettings'
+import { defaultSettings, loadSettings, saveSettings } from './lib/businessSettings'
 import { generateEstimatePDF, generateInvoicePDF } from './lib/pdf'
 import { generateOccurrences, emptyRecurrence, daysBetween, shiftDate } from './lib/recurrence'
+import {
+  rowToClient, rowToEstimate, rowToJob, rowToInvoice,
+  rowToTodo, rowToEvent, rowToTransaction, rowToSettings, settingsToRow,
+} from './lib/db'
 import { PageHeader, Stat, EmptyState, Badge, ConfirmDialog, STATUS_LABEL } from './components/ui'
 import RecurrenceFields from './components/RecurrenceFields'
+import Login from './components/Login'
 
 import Schedule from './pages/Schedule'
 import Todos from './pages/Todos'
@@ -49,20 +54,93 @@ const NAV = [
 
 export default function App() {
   const [tab, setTab] = useState('dashboard')
-  const [clients, setClients] = useState(seedClients)
-  const [estimates, setEstimates] = useState(seedEstimates)
-  const [jobs, setJobs] = useState(seedJobs)
-  const [invoices, setInvoices] = useState(seedInvoices)
-  const [todos, setTodos] = useState(seedTodos)
-  const [events, setEvents] = useState(seedEvents)
-  const [transactions, setTransactions] = useState(seedTransactions)
+  // In demo mode (no Supabase configured) everything starts from the seed
+  // data so the app is immediately usable. When Supabase is connected,
+  // state starts empty and is filled by the data-loading effect below once
+  // signed in — every signed-in user shares the same tables, so seeding
+  // here would just be overwritten by the load anyway.
+  const [clients, setClients] = useState(hasSupabase ? [] : seedClients)
+  const [estimates, setEstimates] = useState(hasSupabase ? [] : seedEstimates)
+  const [jobs, setJobs] = useState(hasSupabase ? [] : seedJobs)
+  const [invoices, setInvoices] = useState(hasSupabase ? [] : seedInvoices)
+  const [todos, setTodos] = useState(hasSupabase ? [] : seedTodos)
+  const [events, setEvents] = useState(hasSupabase ? [] : seedEvents)
+  const [transactions, setTransactions] = useState(hasSupabase ? [] : seedTransactions)
   const [activeEstimateId, setActiveEstimateId] = useState(null)
   const [clientModalOpen, setClientModalOpen] = useState(false)
   const [editingClient, setEditingClient] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null) // { kind, id, label }
-  const [settings, setSettings] = useState(loadSettings)
+  const [settings, setSettings] = useState(hasSupabase ? defaultSettings : loadSettings)
 
-  useEffect(() => { saveSettings(settings) }, [settings])
+  const [session, setSession] = useState(null)
+  const [authLoading, setAuthLoading] = useState(hasSupabase)
+  const [dataLoading, setDataLoading] = useState(hasSupabase)
+
+  // Demo mode: settings are per-browser via localStorage, exactly as before.
+  useEffect(() => {
+    if (hasSupabase) return
+    saveSettings(settings)
+  }, [settings])
+
+  // Live mode: track the signed-in session.
+  useEffect(() => {
+    if (!hasSupabase) return
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setAuthLoading(false)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next)
+      if (!next) {
+        // Signed out: clear shared state so the next login doesn't briefly
+        // flash the previous account's data.
+        setClients([]); setEstimates([]); setJobs([]); setInvoices([])
+        setTodos([]); setEvents([]); setTransactions([])
+        setSettings(defaultSettings)
+      }
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  // Live mode: once signed in, load the shared workspace data plus this
+  // user's own private settings row.
+  useEffect(() => {
+    if (!hasSupabase || !session) return
+    let cancelled = false
+    setDataLoading(true)
+    Promise.all([
+      supabase.from('clients').select('*').order('created_at', { ascending: false }),
+      supabase.from('estimates').select('*').order('created_at', { ascending: false }),
+      supabase.from('jobs').select('*').order('created_at', { ascending: false }),
+      supabase.from('invoices').select('*').order('created_at', { ascending: false }),
+      supabase.from('todos').select('*').order('created_at', { ascending: false }),
+      supabase.from('events').select('*').order('date', { ascending: true }),
+      supabase.from('transactions').select('*').order('date', { ascending: false }),
+      supabase.from('user_settings').select('*').eq('user_id', session.user.id).maybeSingle(),
+    ]).then(([c, es, j, inv, td, ev, tx, us]) => {
+      if (cancelled) return
+      setClients((c.data || []).map(rowToClient))
+      setEstimates((es.data || []).map(rowToEstimate))
+      setJobs((j.data || []).map(rowToJob))
+      setInvoices((inv.data || []).map(rowToInvoice))
+      setTodos((td.data || []).map(rowToTodo))
+      setEvents((ev.data || []).map(rowToEvent))
+      setTransactions((tx.data || []).map(rowToTransaction))
+      setSettings(rowToSettings(us.data, defaultSettings))
+      setDataLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [session?.user?.id])
+
+  // Live mode: save this user's settings to their own row, debounced so
+  // typing in a text field doesn't fire a write per keystroke.
+  useEffect(() => {
+    if (!hasSupabase || !session || dataLoading) return
+    const t = setTimeout(() => {
+      supabase.from('user_settings').upsert(settingsToRow(session.user.id, settings)).then(() => {})
+    }, 600)
+    return () => clearTimeout(t)
+  }, [settings, session?.user?.id, dataLoading])
 
   const clientById = (id) => clients.find(c => c.id === id)
 
@@ -215,6 +293,50 @@ export default function App() {
     if (hasSupabase) supabase.from('transactions').delete().eq('id', id).then(() => {})
   }
 
+  function addEvent(event) {
+    const withId = { ...event, id: crypto.randomUUID() }
+    setEvents(prev => [...prev, withId])
+    if (hasSupabase) {
+      supabase.from('events').insert({
+        id: withId.id, title: withId.title, date: withId.date,
+        time: withId.time || null, client_id: withId.clientId || null,
+      }).then(() => {})
+    }
+  }
+
+  function removeEvent(id) {
+    setEvents(prev => prev.filter(e => e.id !== id))
+    if (hasSupabase) supabase.from('events').delete().eq('id', id).then(() => {})
+  }
+
+  function addTodo(todo) {
+    const withId = { ...todo, id: crypto.randomUUID() }
+    setTodos(prev => [...prev, withId])
+    if (hasSupabase) {
+      supabase.from('todos').insert({
+        id: withId.id, title: withId.title, done: withId.done,
+        due_date: withId.dueDate || null, priority: withId.priority,
+      }).then(() => {})
+    }
+  }
+
+  function updateTodo(id, partial) {
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, ...partial } : t))
+    if (hasSupabase) {
+      const row = {}
+      if ('title' in partial) row.title = partial.title
+      if ('done' in partial) row.done = partial.done
+      if ('dueDate' in partial) row.due_date = partial.dueDate || null
+      if ('priority' in partial) row.priority = partial.priority
+      supabase.from('todos').update(row).eq('id', id).then(() => {})
+    }
+  }
+
+  function removeTodo(id) {
+    setTodos(prev => prev.filter(t => t.id !== id))
+    if (hasSupabase) supabase.from('todos').delete().eq('id', id).then(() => {})
+  }
+
   function newEstimate() {
     const est = {
       id: crypto.randomUUID(),
@@ -280,6 +402,10 @@ export default function App() {
   const activeEstimate = estimates.find(e => e.id === activeEstimateId) || null
   const currentLabel = NAV.flatMap(s => s.items).find(i => i.key === tab)?.label ?? ''
 
+  if (hasSupabase && authLoading) return <div className="login-screen">Loading…</div>
+  if (hasSupabase && !session) return <Login />
+  if (hasSupabase && dataLoading) return <div className="login-screen">Loading your workspace…</div>
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -302,9 +428,15 @@ export default function App() {
           <span className="mode-pill">{hasSupabase ? '● live · supabase' : '○ demo mode'}</span>
           <div style={{ marginTop: 10 }}>
             {hasSupabase
-              ? 'Connected to your Supabase project.'
+              ? 'Shared workspace — everyone signed in sees the same data.'
               : 'Add VITE_SUPABASE_URL / ANON_KEY in .env to persist data.'}
           </div>
+          {hasSupabase && session && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 11.5, wordBreak: 'break-all' }}>{session.user.email}</div>
+              <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => supabase.auth.signOut()}>Sign out</button>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -370,10 +502,10 @@ export default function App() {
         )}
 
         {tab === 'schedule' && (
-          <Schedule events={events} setEvents={setEvents} jobs={jobs} transactions={transactions} clientById={clientById} />
+          <Schedule events={events} addEvent={addEvent} removeEvent={removeEvent} jobs={jobs} transactions={transactions} clientById={clientById} />
         )}
 
-        {tab === 'todos' && <Todos todos={todos} setTodos={setTodos} />}
+        {tab === 'todos' && <Todos todos={todos} addTodo={addTodo} updateTodo={updateTodo} removeTodo={removeTodo} />}
 
         {tab === 'map' && <MapPage clients={clients} />}
 

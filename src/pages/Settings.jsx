@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { PageHeader } from '../components/ui'
+import { hasSupabase } from '../supabaseClient'
 
 export default function Settings({ settings, setSettings }) {
   const logoInput = useRef(null)
@@ -89,7 +90,10 @@ export default function Settings({ settings, setSettings }) {
           </div>
 
           <p style={{ fontSize: 11.5, color: 'var(--text-400)', marginTop: 14 }}>
-            Saved automatically in this browser. When you download a PDF you can also override the terms
+            {hasSupabase
+              ? "Saved automatically to your account — private to you, and follows you to any device you sign in on. Your business partner has their own separate copy of these preferences."
+              : 'Saved automatically in this browser.'}{' '}
+            When you download a PDF you can also override the terms
             just for that one document without changing these defaults.
           </p>
         </div>
