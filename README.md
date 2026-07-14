@@ -135,8 +135,9 @@ placeholder. If you want higher accuracy, the natural upgrade is swapping
 1. Create a project at [supabase.com](https://supabase.com).
 2. **SQL Editor** → paste the contents of `supabase/schema.sql` → run it.
    This creates `clients`, `estimates`, `jobs`, `invoices`, `todos`,
-   `events`, and `transactions` tables with row-level security so each
-   signed-in user only sees their own data.
+   `events`, and `transactions` (the shared business data) plus
+   `user_settings` (private per-person PDF/business-info preferences),
+   all with row-level security.
 3. **Project Settings → API** → copy your **Project URL** and **anon
    public key**.
 4. Copy `.env.example` to `.env` and fill them in:
@@ -144,17 +145,31 @@ placeholder. If you want higher accuracy, the natural upgrade is swapping
    VITE_SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
    VITE_SUPABASE_ANON_KEY=your-anon-public-key
    ```
-5. Restart the dev server (stop it with Ctrl+C in the terminal, run
-   `npm run dev` again). The sidebar switches from "○ demo mode" to
-   "● live · supabase," and new records will be written to your database.
+5. In **Authentication → Users**, add one account per person (email +
+   password). Whoever runs the project can also do this by calling
+   `supabase.auth.signUp()` once per teammate. If you'd rather they not get
+   a "confirm your email" notice before you're ready to show them,
+   toggle **Authentication → Providers → Email → Confirm email** off first
+   (you can turn it back on later).
+6. Restart the dev server (stop it with Ctrl+C, run `npm run dev` again).
+   You'll land on a sign-in screen; log in with one of the accounts from
+   step 5.
 
-**Note on auth:** the schema's row-level security is keyed to `auth.uid()`,
-which means Supabase Auth needs to be wired in (magic link or email/
-password) before RLS will let writes through for a real signed-in user.
-The current build writes new records to Supabase but always reads from the
-in-memory seed data on load — that's intentional so you can review the code
-and decide on an auth approach before wiring up `select()` calls on mount.
-Happy to build that next once you tell me which auth method you want.
+## How multi-user access works
+
+- **Business data is shared.** Clients, estimates, jobs, invoices, the
+  schedule, to-dos, and income/expenses/bills are visible to and editable
+  by every signed-in teammate — there's no per-user siloing. Whoever's
+  logged in sees the same records, live as of their last page load (not a
+  real-time push while both of you are on the app at once — reload to see
+  a teammate's latest changes).
+- **Business Info / PDF settings are private per account.** Each person's
+  business name/logo/terms/etc. live in their own `user_settings` row and
+  only affect their own PDFs and preview — signing in as someone else
+  shows that person's own settings, not yours.
+- Sign out from the bottom of the sidebar. There's no self-serve sign-up
+  screen by design — accounts are provisioned by whoever administers the
+  Supabase project, so only people you've explicitly added can get in.
 
 ## Where things live
 
@@ -162,8 +177,15 @@ Happy to build that next once you tell me which auth method you want.
 - `src/lib/finance.js` — P&L / income-expense-bill rollups.
 - `src/lib/receiptOcr.js` — photo → draft expense row.
 - `src/lib/pdf.js` — branded PDF generation for estimates and invoices.
-- `src/lib/businessSettings.js` — PDF branding/terms, saved to
-  `localStorage` (per-browser, not per-Supabase-user yet — see note below).
+- `src/lib/businessSettings.js` — PDF branding/terms defaults, plus
+  `localStorage` read/write used only in demo mode (no Supabase
+  configured). In live mode, settings are instead loaded from and saved to
+  the per-user `user_settings` table (see `src/lib/db.js` and the
+  settings effects in `src/App.jsx`).
+- `src/lib/db.js` — maps Supabase's snake_case rows to the camelCase
+  shape used throughout the app.
+- `src/components/Login.jsx` — the email/password sign-in screen shown
+  when Supabase is configured and no one's signed in.
 - `src/pages/` — one file per major section (Schedule, Todos, Receipts,
   MapPage, Income/Expenses/Bills via `TransactionsPage.jsx`, Reports,
   Settings).
@@ -171,10 +193,3 @@ Happy to build that next once you tell me which auth method you want.
   page headers, empty states, the delete-confirmation dialog).
 - `src/index.css` — the whole design system as CSS custom properties at
   the top (`--ink-900`, `--amber`, etc.) if you want to re-theme it.
-
-**Note on Business Info storage:** it's currently saved with
-`localStorage`, so it lives in one browser rather than following you
-across devices or being shared with a teammate. Once you wire in Supabase
-Auth, the natural next step is a `business_settings` table keyed to
-`auth.uid()` (mirroring the `owner` pattern already used for every other
-table) — ask if you'd like that added.
