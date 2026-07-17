@@ -70,7 +70,7 @@ export default function App() {
   const [events, setEvents] = useState(hasSupabase ? [] : seedEvents)
   const [transactions, setTransactions] = useState(hasSupabase ? [] : seedTransactions)
   // No demo-mode fallback: bank sync requires the real Supabase backend
-  // (Edge Functions + Plaid), so this just stays empty in demo mode.
+  // (Edge Functions + Teller), so this just stays empty in demo mode.
   const [bankAccounts, setBankAccounts] = useState([])
   const [activeEstimateId, setActiveEstimateId] = useState(null)
   const [clientModalOpen, setClientModalOpen] = useState(false)

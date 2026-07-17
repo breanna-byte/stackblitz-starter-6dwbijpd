@@ -2,9 +2,9 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 
 // Every function needs two clients: one scoped to the caller (to verify
 // who's asking, via their JWT) and one with the service role (to touch
-// plaid_items, which has no client-facing RLS policy at all — see
+// teller_enrollments, which has no client-facing RLS policy at all — see
 // schema.sql). Mixing these up would either leak the service role's
-// power to an unverified caller or fail to reach plaid_items at all.
+// power to an unverified caller or fail to reach teller_enrollments at all.
 export async function getCallerAndAdminClient(req: Request) {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) throw new Error('Missing Authorization header')

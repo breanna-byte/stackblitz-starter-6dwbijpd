@@ -49,9 +49,9 @@ backed by Supabase.
   paid bill into income / expenses / net profit, a month-by-month trend
   table, and an expense-by-category breakdown. The Dashboard also shows a
   live P&L snapshot.
-- **Bank Sync** — connect a real bank account (via Plaid) to auto-import
+- **Bank Sync** — connect a real bank account (via Teller) to auto-import
   and categorize transactions straight into Income/Expenses. Requires
-  extra one-time setup — see "Connect a bank account (Plaid)" below.
+  extra one-time setup — see "Connect a bank account (Teller)" below.
 
 **Business**
 - **PDF & Business Info** — your business name, tagline, logo, address,
@@ -174,41 +174,54 @@ placeholder. If you want higher accuracy, the natural upgrade is swapping
   screen by design — accounts are provisioned by whoever administers the
   Supabase project, so only people you've explicitly added can get in.
 
-## Connect a bank account (Plaid)
+## Connect a bank account (Teller)
 
-Bank sync needs three things beyond the base Supabase setup above, since
+Bank sync needs a few things beyond the base Supabase setup above, since
 a bank access token is sensitive enough that it can't live in the browser
-— it's handled entirely by server-side Edge Functions instead.
+— it's handled entirely by server-side Edge Functions instead. Teller was
+chosen over Plaid for a lighter signup process (no LEI or similarly heavy
+business-verification step to reach sandbox/live use) — see
+[teller.io/docs](https://teller.io/docs) for their current requirements,
+since this wasn't built with live access to verify against.
 
-1. **Get Plaid API keys.** Sign up at [plaid.com](https://plaid.com) →
-   **Team Settings → Keys**. Sandbox keys (fake test banks, free) are
-   available immediately; real institutions need Plaid's production-access
-   approval, which isn't instant.
+1. **Get a Teller application ID.** Sign up at
+   [teller.io](https://teller.io) and create an application in your
+   dashboard — sandbox access (fake test banks) should be available right
+   away.
 2. **Deploy the Edge Functions.** With the [Supabase
    CLI](https://supabase.com/docs/guides/cli) installed and linked to your
    project:
    ```
-   supabase functions deploy plaid-create-link-token
-   supabase functions deploy plaid-exchange-token
-   supabase functions deploy plaid-sync-transactions
+   supabase functions deploy teller-store-enrollment
+   supabase functions deploy teller-sync-transactions
    ```
-3. **Set the Plaid secrets** (never put these in `.env` — that file ships
-   to the browser; these stay server-side):
+3. Add your **application ID** to `.env` (this one *is* meant to be
+   public/client-side, like a Stripe publishable key — see
+   `.env.example`):
    ```
-   supabase secrets set PLAID_CLIENT_ID=your-client-id
-   supabase secrets set PLAID_SECRET=your-sandbox-or-production-secret
-   supabase secrets set PLAID_ENV=sandbox
+   VITE_TELLER_APPLICATION_ID=your-application-id
+   VITE_TELLER_ENVIRONMENT=sandbox
    ```
 4. Re-run `supabase/schema.sql` if you haven't already since bank sync was
-   added — it creates `plaid_items` and `bank_accounts` and extends
-   `transactions`.
+   added — it creates `teller_enrollments` and `bank_accounts` and
+   extends `transactions`.
 
 Once that's done, **Bank Sync** in the sidebar lets you connect an account
 and sync — new transactions land in Income/Expenses with a best-guess
-category (see `supabase/functions/plaid-sync-transactions/index.ts` for
+category (see `supabase/functions/teller-sync-transactions/index.ts` for
 the mapping) that you can edit like any manual entry. "Bills" are never
 auto-created from a sync, since a bill here means a due-date obligation
 tracked *before* it's paid, and a synced transaction already happened.
+
+**Before going live (not sandbox), verify against Teller's current
+docs:** this integration was built without live network access to Teller,
+so three specific assumptions in
+`supabase/functions/teller-sync-transactions/index.ts` are flagged inline
+as worth double-checking against a real response — the transaction amount
+sign convention, the category field, and pagination. Teller's production
+environment is also documented as requiring a TLS client certificate in
+addition to the access token, which isn't wired up here (see the comment
+in `supabase/functions/_shared/teller.ts`).
 
 ## Where things live
 
@@ -223,11 +236,11 @@ tracked *before* it's paid, and a synced transaction already happened.
   settings effects in `src/App.jsx`).
 - `src/lib/db.js` — maps Supabase's snake_case rows to the camelCase
   shape used throughout the app.
-- `src/lib/bank.js` — client-side wrappers that call the Plaid Edge
+- `src/lib/bank.js` — client-side wrappers that call the Teller Edge
   Functions below.
-- `supabase/functions/` — the three Edge Functions behind Bank Sync
-  (create link token, exchange public token, sync transactions) — the
-  only place the Plaid access token is ever handled.
+- `supabase/functions/` — the Edge Functions behind Bank Sync (store a
+  new enrollment, sync transactions) — the only place the Teller access
+  token is ever handled.
 - `src/components/Login.jsx` — the email/password sign-in screen shown
   when Supabase is configured and no one's signed in.
 - `src/pages/` — one file per major section (Schedule, Todos, Receipts,

@@ -1,49 +1,79 @@
-import { useState } from 'react'
-import { usePlaidLink } from 'react-plaid-link'
+import { useEffect, useState } from 'react'
 import { PageHeader, EmptyState } from '../components/ui'
 import { hasSupabase } from '../supabaseClient'
-import { createLinkToken, exchangePublicToken, syncTransactions } from '../lib/bank'
+import { storeEnrollment, syncTransactions } from '../lib/bank'
+
+const TELLER_APPLICATION_ID = import.meta.env.VITE_TELLER_APPLICATION_ID
+const TELLER_ENVIRONMENT = import.meta.env.VITE_TELLER_ENVIRONMENT || 'sandbox'
+const CONNECT_SCRIPT_SRC = 'https://cdn.teller.io/connect/connect.js'
+
+// Teller Connect ships as a vanilla script (there's no first-party React
+// package this was built against with a verified API), so this loads it
+// once and calls window.TellerConnect directly rather than depending on
+// an npm wrapper whose exact API couldn't be confirmed from this
+// environment (no network access to check).
+function loadConnectScript() {
+  return new Promise((resolve, reject) => {
+    if (window.TellerConnect) return resolve()
+    const existing = document.querySelector(`script[src="${CONNECT_SCRIPT_SRC}"]`)
+    if (existing) {
+      existing.addEventListener('load', () => resolve())
+      existing.addEventListener('error', reject)
+      return
+    }
+    const script = document.createElement('script')
+    script.src = CONNECT_SCRIPT_SRC
+    script.onload = () => resolve()
+    script.onerror = reject
+    document.head.appendChild(script)
+  })
+}
 
 export default function BankSync({ bankAccounts, onConnected, onSynced }) {
-  const [linkToken, setLinkToken] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [lastSync, setLastSync] = useState(null)
 
-  const { open, ready } = usePlaidLink({
-    token: linkToken,
-    onSuccess: async (publicToken, metadata) => {
-      setBusy(true)
-      setError('')
-      try {
-        await exchangePublicToken(publicToken, metadata.institution?.name)
-        await onConnected()
-      } catch (e) {
-        setError(e.message)
-      } finally {
-        setBusy(false)
-        setLinkToken(null)
-      }
-    },
-    onExit: () => setLinkToken(null),
-  })
+  useEffect(() => {
+    if (hasSupabase && TELLER_APPLICATION_ID) loadConnectScript().catch(() => {})
+  }, [])
 
   async function startConnect() {
     setError('')
+    if (!TELLER_APPLICATION_ID) {
+      setError('VITE_TELLER_APPLICATION_ID is not set — add it to .env (see README).')
+      return
+    }
     setBusy(true)
     try {
-      const token = await createLinkToken()
-      setLinkToken(token)
+      await loadConnectScript()
+      window.TellerConnect.setup({
+        applicationId: TELLER_APPLICATION_ID,
+        environment: TELLER_ENVIRONMENT,
+        onSuccess: async (enrollment) => {
+          // VERIFY: the callback payload shape below is a best guess —
+          // console.log(enrollment) on first real test and adjust these
+          // three lines if the fields don't match.
+          try {
+            await storeEnrollment({
+              accessToken: enrollment.accessToken,
+              enrollmentId: enrollment.enrollment?.id,
+              institutionName: enrollment.enrollment?.institution?.name,
+            })
+            await onConnected()
+          } catch (e) {
+            setError(e.message)
+          } finally {
+            setBusy(false)
+          }
+        },
+        onExit: () => setBusy(false),
+      }).open()
     } catch (e) {
-      setError(e.message)
+      setError('Could not load Teller Connect — check your network connection.')
       setBusy(false)
     }
   }
-
-  // usePlaidLink only becomes `ready` after the token prop above has
-  // propagated, so opening happens in response to that, not the click
-  // that requested the token.
-  if (linkToken && ready && !busy) open()
 
   async function runSync() {
     setBusy(true)
@@ -104,7 +134,7 @@ export default function BankSync({ bankAccounts, onConnected, onSynced }) {
           </div>
           {lastSync && (
             <p style={{ fontSize: 11.5, color: 'var(--text-400)', marginTop: 12 }}>
-              Last sync: {lastSync.added} new, {lastSync.modified} updated, {lastSync.removed} removed.
+              Last sync: {lastSync.added} transactions imported or updated.
               New transactions land in Income/Expenses with a best-guess category — review and adjust as needed.
             </p>
           )}
