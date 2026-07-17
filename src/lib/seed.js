@@ -1,7 +1,7 @@
 export const seedClients = [
-  { id: 'c1', name: 'Marisol Ortega', email: 'marisol.ortega@example.com', phone: '(970) 555-0148', address: '412 Willow Creek Dr, Fort Collins, CO' },
-  { id: 'c2', name: 'Dan Whitfield', email: 'dan.whitfield@example.com', phone: '(970) 555-0193', address: '88 Timberline Rd, Loveland, CO' },
-  { id: 'c3', name: 'Greeley Union School District', email: 'facilities@example-gusd.org', phone: '(970) 555-0122', address: '1900 8th Ave, Greeley, CO' },
+  { id: 'c1', contactName: 'Marisol Ortega', businessName: '', email: 'marisol.ortega@example.com', phone: '(970) 555-0148', address: '412 Willow Creek Dr, Fort Collins, CO' },
+  { id: 'c2', contactName: 'Dan Whitfield', businessName: '', email: 'dan.whitfield@example.com', phone: '(970) 555-0193', address: '88 Timberline Rd, Loveland, CO' },
+  { id: 'c3', contactName: 'Facilities Dept.', businessName: 'Greeley Union School District', email: 'facilities@example-gusd.org', phone: '(970) 555-0122', address: '1900 8th Ave, Greeley, CO' },
 ]
 
 export const seedEstimates = [

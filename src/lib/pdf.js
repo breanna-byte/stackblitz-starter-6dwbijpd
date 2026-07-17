@@ -66,11 +66,12 @@ function drawClientBlock(doc, y, client, label = 'Bill to') {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(11)
   doc.setTextColor(20, 24, 28)
-  doc.text(client?.name || 'Client', 40, y + 16)
+  doc.text(client?.businessName || client?.contactName || 'Client', 40, y + 16)
 
   doc.setFontSize(9.5)
   doc.setTextColor(90, 96, 107)
-  const lines = [client?.address, client?.phone, client?.email].filter(Boolean)
+  const attn = client?.businessName && client?.contactName ? `Attn: ${client.contactName}` : null
+  const lines = [attn, client?.address, client?.phone, client?.email].filter(Boolean)
   lines.forEach((line, i) => doc.text(line, 40, y + 32 + i * 12))
 
   return y + 32 + lines.length * 12 + 20

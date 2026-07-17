@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { PageHeader, EmptyState } from '../components/ui'
+import { clientLabel } from '../lib/db'
 
 // Uses Google's keyless embed endpoint (maps?q=...&output=embed) so this
 // works with zero API key / billing setup. Good for a small business's own
@@ -13,7 +14,7 @@ export default function MapPage({ clients }) {
   const locations = useMemo(() => {
     return clients
       .filter(c => c.address)
-      .map(c => ({ id: `client-${c.id}`, label: c.name, sub: 'Client', address: c.address }))
+      .map(c => ({ id: `client-${c.id}`, label: clientLabel(c), sub: 'Client', address: c.address }))
   }, [clients])
 
   const [selectedId, setSelectedId] = useState(locations[0]?.id ?? null)

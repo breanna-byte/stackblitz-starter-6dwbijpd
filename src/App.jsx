@@ -11,7 +11,7 @@ import { generateEstimatePDF, generateInvoicePDF } from './lib/pdf'
 import { generateOccurrences, emptyRecurrence, daysBetween, shiftDate } from './lib/recurrence'
 import {
   rowToClient, rowToEstimate, rowToJob, rowToInvoice,
-  rowToTodo, rowToEvent, rowToTransaction, rowToSettings, settingsToRow,
+  rowToTodo, rowToEvent, rowToTransaction, rowToSettings, settingsToRow, clientLabel,
 } from './lib/db'
 import { PageHeader, Stat, EmptyState, Badge, ConfirmDialog, STATUS_LABEL } from './components/ui'
 import RecurrenceFields from './components/RecurrenceFields'
@@ -162,15 +162,20 @@ export default function App() {
     setClients(prev => [withId, ...prev])
     if (hasSupabase) {
       supabase.from('clients').insert({
-        id: withId.id, name: withId.name, email: withId.email,
-        phone: withId.phone, address: withId.address,
+        id: withId.id, contact_name: withId.contactName, business_name: withId.businessName || null,
+        email: withId.email, phone: withId.phone, address: withId.address,
       }).then(() => {})
     }
   }
 
   function updateClient(id, partial) {
     setClients(prev => prev.map(c => c.id === id ? { ...c, ...partial } : c))
-    if (hasSupabase) supabase.from('clients').update(partial).eq('id', id).then(() => {})
+    if (hasSupabase) {
+      const row = { ...partial }
+      if ('contactName' in row) { row.contact_name = row.contactName; delete row.contactName }
+      if ('businessName' in row) { row.business_name = row.businessName; delete row.businessName }
+      supabase.from('clients').update(row).eq('id', id).then(() => {})
+    }
   }
 
   function removeClient(id) {
@@ -605,7 +610,7 @@ function Dashboard({ estimates, jobs, invoices, transactions, clientById, onNewE
             <tbody>
               {totals.slice(0, 6).map(({ e, t }) => (
                 <tr key={e.id} style={{ cursor: 'pointer' }} onClick={() => onOpenEstimate(e.id)}>
-                  <td>{clientById(e.clientId)?.name ?? '—'}</td>
+                  <td>{clientById(e.clientId) ? clientLabel(clientById(e.clientId)) : '—'}</td>
                   <td>{e.title}</td>
                   <td><Badge status={e.status} /></td>
                   <td className="figure">{t.marginPct.toFixed(0)}%</td>
@@ -645,7 +650,7 @@ function EstimateList({ estimates, clientById, onOpen, onNew, onDelete, onDownlo
                   const t = computeEstimateTotals(e.items, e)
                   return (
                     <tr key={e.id}>
-                      <td>{clientById(e.clientId)?.name ?? '—'}</td>
+                      <td>{clientById(e.clientId) ? clientLabel(clientById(e.clientId)) : '—'}</td>
                       <td>{e.title}</td>
                       <td className="figure">{e.createdAt}</td>
                       <td><Badge status={e.status} /></td>
@@ -715,7 +720,7 @@ function EstimateBuilder({ estimate, clients, settings, onChange, onBack, onConv
         <div className="field">
           <label>Client</label>
           <select value={estimate.clientId ?? ''} onChange={e => patch({ clientId: e.target.value })}>
-            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {clients.map(c => <option key={c.id} value={c.id}>{clientLabel(c)}</option>)}
           </select>
         </div>
         <div className="field">
@@ -841,7 +846,7 @@ function Jobs({ jobs, clients, clientById, addJob, updateJob, onDelete, onDelete
               <tbody>
                 {jobs.map(j => (
                   <tr key={j.id}>
-                    <td>{clientById(j.clientId)?.name ?? '—'}</td>
+                    <td>{clientById(j.clientId) ? clientLabel(clientById(j.clientId)) : '—'}</td>
                     <td>{j.title}{j.seriesId && <span className="series-badge">↻ recurring</span>}</td>
                     <td className="figure">{j.start || '—'}</td>
                     <td className="figure">{j.end || '—'}</td>
@@ -904,7 +909,7 @@ function JobModal({ job, clients, onClose, onSave }) {
             <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
           <div className="field"><label>Client</label>
             <select value={form.clientId ?? ''} onChange={e => setForm({ ...form, clientId: e.target.value })}>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {clients.map(c => <option key={c.id} value={c.id}>{clientLabel(c)}</option>)}
             </select>
           </div>
           <div className="field-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
@@ -960,7 +965,7 @@ function Invoices({ invoices, estimates, clients, clientById, addInvoice, update
                   const client = clientById(inv.clientId)
                   return (
                     <tr key={inv.id}>
-                      <td>{client?.name ?? '—'}{inv.seriesId && <span className="series-badge">↻ recurring</span>}</td>
+                      <td>{client ? clientLabel(client) : '—'}{inv.seriesId && <span className="series-badge">↻ recurring</span>}</td>
                       <td className="figure">{inv.issuedAt}</td>
                       <td className="figure">{inv.dueAt || '—'}</td>
                       <td><Badge status={inv.status} /></td>
@@ -972,9 +977,9 @@ function Invoices({ invoices, estimates, clients, clientById, addInvoice, update
                             <button className="btn btn-ghost btn-sm" onClick={() => markPaid(inv.id)}>Mark paid</button>
                           )}
                           <button className="btn btn-ghost btn-sm" onClick={() => setEditingInvoice(inv)}>Edit</button>
-                          <button className="btn btn-danger-ghost btn-sm" onClick={() => onDelete(inv.id, client?.name ?? 'this invoice')}>Delete</button>
+                          <button className="btn btn-danger-ghost btn-sm" onClick={() => onDelete(inv.id, client ? clientLabel(client) : 'this invoice')}>Delete</button>
                           {inv.seriesId && (
-                            <button className="btn btn-danger-ghost btn-sm" onClick={() => onDeleteSeries(inv.seriesId, client?.name ?? 'this series')}>Delete series</button>
+                            <button className="btn btn-danger-ghost btn-sm" onClick={() => onDeleteSeries(inv.seriesId, client ? clientLabel(client) : 'this series')}>Delete series</button>
                           )}
                         </div>
                       </td>
@@ -1029,7 +1034,7 @@ function InvoiceModal({ invoice, clients, onClose, onSave }) {
         <div className="field-row" style={{ gridTemplateColumns: '1fr', gap: 12 }}>
           <div className="field"><label>Client</label>
             <select value={form.clientId ?? ''} onChange={e => setForm({ ...form, clientId: e.target.value })}>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {clients.map(c => <option key={c.id} value={c.id}>{clientLabel(c)}</option>)}
             </select>
           </div>
           <div className="field-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
@@ -1083,11 +1088,12 @@ function Clients({ clients, onAddClick, onEditClick, onDelete, estimates }) {
       <div className="card">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Estimates</th><th></th></tr></thead>
+            <thead><tr><th>Business name</th><th>Contact name</th><th>Email</th><th>Phone</th><th>Address</th><th>Estimates</th><th></th></tr></thead>
             <tbody>
               {clients.map(c => (
                 <tr key={c.id}>
-                  <td><strong>{c.name}</strong></td>
+                  <td><strong>{c.businessName || '—'}</strong></td>
+                  <td>{c.contactName}</td>
                   <td>{c.email}</td>
                   <td className="figure">{c.phone}</td>
                   <td>{c.address}</td>
@@ -1095,7 +1101,7 @@ function Clients({ clients, onAddClick, onEditClick, onDelete, estimates }) {
                   <td>
                     <div className="row-actions">
                       <button className="btn btn-ghost btn-sm" onClick={() => onEditClick(c)}>Edit</button>
-                      <button className="btn btn-danger-ghost btn-sm" onClick={() => onDelete(c.id, c.name)}>Delete</button>
+                      <button className="btn btn-danger-ghost btn-sm" onClick={() => onDelete(c.id, clientLabel(c))}>Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -1110,15 +1116,17 @@ function Clients({ clients, onAddClick, onEditClick, onDelete, estimates }) {
 
 function ClientModal({ initial, onClose, onSave }) {
   const [form, setForm] = useState(initial
-    ? { name: initial.name, email: initial.email || '', phone: initial.phone || '', address: initial.address || '' }
-    : { name: '', email: '', phone: '', address: '' })
+    ? { contactName: initial.contactName, businessName: initial.businessName || '', email: initial.email || '', phone: initial.phone || '', address: initial.address || '' }
+    : { contactName: '', businessName: '', email: '', phone: '', address: '' })
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <h2>{initial ? 'Edit client' : 'Add client'}</h2>
         <div className="field-row" style={{ gridTemplateColumns: '1fr', gap: 12 }}>
-          <div className="field"><label>Name</label>
-            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+          <div className="field"><label>Contact name</label>
+            <input value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} /></div>
+          <div className="field"><label>Business name <span style={{ fontWeight: 400 }}>(optional)</span></label>
+            <input value={form.businessName} onChange={e => setForm({ ...form, businessName: e.target.value })} /></div>
           <div className="field"><label>Email</label>
             <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
           <div className="field"><label>Phone</label>
@@ -1128,7 +1136,7 @@ function ClientModal({ initial, onClose, onSave }) {
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={!form.name} onClick={() => onSave(form)}>{initial ? 'Save changes' : 'Save client'}</button>
+          <button className="btn btn-primary" disabled={!form.contactName} onClick={() => onSave(form)}>{initial ? 'Save changes' : 'Save client'}</button>
         </div>
       </div>
     </div>

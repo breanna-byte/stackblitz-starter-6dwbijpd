@@ -9,12 +9,24 @@ create extension if not exists "pgcrypto";
 create table if not exists clients (
   id uuid primary key default gen_random_uuid(),
   owner uuid references auth.users(id) default auth.uid(),
-  name text not null,
+  contact_name text not null,
+  business_name text,
   email text,
   phone text,
   address text,
   created_at timestamptz default now()
 );
+
+-- Safe to re-run: migrates a clients table created before the
+-- contact/business name split existed.
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_name = 'clients' and column_name = 'name')
+     and not exists (select 1 from information_schema.columns where table_name = 'clients' and column_name = 'contact_name') then
+    alter table clients rename column name to contact_name;
+  end if;
+end $$;
+alter table clients add column if not exists business_name text;
 
 create table if not exists estimates (
   id uuid primary key default gen_random_uuid(),

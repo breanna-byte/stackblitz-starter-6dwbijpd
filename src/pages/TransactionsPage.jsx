@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PageHeader, EmptyState, Stat, Badge } from '../components/ui'
 import { formatCurrency } from '../lib/calc'
 import { emptyTransaction } from '../lib/finance'
+import { clientLabel } from '../lib/db'
 
 const CONFIG = {
   income: {
@@ -78,7 +79,7 @@ export default function TransactionsPage({ type, transactions, addTransaction, u
               <tbody>
                 {rows.map(t => (
                   <tr key={t.id}>
-                    <td>{t.vendorOrSource}{t.clientId && clientById(t.clientId) ? ` · ${clientById(t.clientId).name}` : ''}</td>
+                    <td>{t.vendorOrSource}{t.clientId && clientById(t.clientId) ? ` · ${clientLabel(clientById(t.clientId))}` : ''}</td>
                     <td>{t.category}</td>
                     <td className="figure">{t.date}</td>
                     {type === 'bill' && <td className="figure">{t.dueDate || '—'}</td>}

@@ -4,7 +4,16 @@
 // are only for the full row shape that comes back from a select().
 
 export function rowToClient(r) {
-  return { id: r.id, name: r.name, email: r.email || '', phone: r.phone || '', address: r.address || '' }
+  return {
+    id: r.id, contactName: r.contact_name, businessName: r.business_name || '',
+    email: r.email || '', phone: r.phone || '', address: r.address || '',
+  }
+}
+
+// The single display name used in tables, dropdowns, and PDFs: the
+// business name if there is one, otherwise the contact's own name.
+export function clientLabel(client) {
+  return client?.businessName || client?.contactName || '—'
 }
 
 export function rowToEstimate(r) {
