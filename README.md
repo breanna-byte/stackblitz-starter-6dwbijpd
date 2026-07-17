@@ -24,8 +24,8 @@ backed by Supabase.
   estimate — there's a manual amount field for that case). Draft/sent/
   paid/overdue status with a "mark paid" action; edit dates/status/deposit
   % or delete; download as a branded PDF. Can be made **recurring**.
-- **Clients** — contact list with edit and delete (delete asks for
-  confirmation first), address, linked estimate count.
+- **Clients** — contact name + optional business name, edit and delete
+  (delete asks for confirmation first), address, linked estimate count.
 
 **Field**
 - **Schedule** — a real month-view calendar. Automatically plots job start/
@@ -49,6 +49,9 @@ backed by Supabase.
   paid bill into income / expenses / net profit, a month-by-month trend
   table, and an expense-by-category breakdown. The Dashboard also shows a
   live P&L snapshot.
+- **Bank Sync** — connect a real bank account (via Plaid) to auto-import
+  and categorize transactions straight into Income/Expenses. Requires
+  extra one-time setup — see "Connect a bank account (Plaid)" below.
 
 **Business**
 - **PDF & Business Info** — your business name, tagline, logo, address,
@@ -171,6 +174,42 @@ placeholder. If you want higher accuracy, the natural upgrade is swapping
   screen by design — accounts are provisioned by whoever administers the
   Supabase project, so only people you've explicitly added can get in.
 
+## Connect a bank account (Plaid)
+
+Bank sync needs three things beyond the base Supabase setup above, since
+a bank access token is sensitive enough that it can't live in the browser
+— it's handled entirely by server-side Edge Functions instead.
+
+1. **Get Plaid API keys.** Sign up at [plaid.com](https://plaid.com) →
+   **Team Settings → Keys**. Sandbox keys (fake test banks, free) are
+   available immediately; real institutions need Plaid's production-access
+   approval, which isn't instant.
+2. **Deploy the Edge Functions.** With the [Supabase
+   CLI](https://supabase.com/docs/guides/cli) installed and linked to your
+   project:
+   ```
+   supabase functions deploy plaid-create-link-token
+   supabase functions deploy plaid-exchange-token
+   supabase functions deploy plaid-sync-transactions
+   ```
+3. **Set the Plaid secrets** (never put these in `.env` — that file ships
+   to the browser; these stay server-side):
+   ```
+   supabase secrets set PLAID_CLIENT_ID=your-client-id
+   supabase secrets set PLAID_SECRET=your-sandbox-or-production-secret
+   supabase secrets set PLAID_ENV=sandbox
+   ```
+4. Re-run `supabase/schema.sql` if you haven't already since bank sync was
+   added — it creates `plaid_items` and `bank_accounts` and extends
+   `transactions`.
+
+Once that's done, **Bank Sync** in the sidebar lets you connect an account
+and sync — new transactions land in Income/Expenses with a best-guess
+category (see `supabase/functions/plaid-sync-transactions/index.ts` for
+the mapping) that you can edit like any manual entry. "Bills" are never
+auto-created from a sync, since a bill here means a due-date obligation
+tracked *before* it's paid, and a synced transaction already happened.
+
 ## Where things live
 
 - `src/lib/calc.js` — the estimate pricing engine (pure functions, no UI).
@@ -184,6 +223,11 @@ placeholder. If you want higher accuracy, the natural upgrade is swapping
   settings effects in `src/App.jsx`).
 - `src/lib/db.js` — maps Supabase's snake_case rows to the camelCase
   shape used throughout the app.
+- `src/lib/bank.js` — client-side wrappers that call the Plaid Edge
+  Functions below.
+- `supabase/functions/` — the three Edge Functions behind Bank Sync
+  (create link token, exchange public token, sync transactions) — the
+  only place the Plaid access token is ever handled.
 - `src/components/Login.jsx` — the email/password sign-in screen shown
   when Supabase is configured and no one's signed in.
 - `src/pages/` — one file per major section (Schedule, Todos, Receipts,
