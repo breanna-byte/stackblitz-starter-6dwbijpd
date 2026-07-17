@@ -116,6 +116,46 @@ create table if not exists transactions (
   created_at timestamptz default now()
 );
 
+-- Bank sync (Plaid). Two tables, deliberately separated by sensitivity:
+--
+-- plaid_items holds the Plaid access_token — a long-lived credential that
+-- can pull transactions from the linked bank account. It must never reach
+-- the browser, so unlike every other table here it gets NO client-facing
+-- RLS policy at all (see below): only Supabase Edge Functions, which use
+-- the service_role key and bypass RLS entirely, can read or write it.
+--
+-- bank_accounts holds non-secret display metadata (institution name,
+-- account mask, type) so the team can see what's connected — this one
+-- *is* shared/readable like the rest of the business tables.
+create table if not exists plaid_items (
+  id uuid primary key default gen_random_uuid(),
+  owner uuid references auth.users(id) default auth.uid(),
+  item_id text not null unique,
+  access_token text not null,
+  institution_name text,
+  -- Plaid's /transactions/sync cursor; null means "sync from the start."
+  cursor text,
+  created_at timestamptz default now()
+);
+
+create table if not exists bank_accounts (
+  id uuid primary key default gen_random_uuid(),
+  plaid_item_id uuid references plaid_items(id) on delete cascade,
+  account_id text not null unique,
+  name text not null,
+  mask text,
+  type text,
+  subtype text,
+  created_at timestamptz default now()
+);
+
+-- Safe to re-run: adds bank-sync tracking to a transactions table created
+-- before bank sync existed. plaid_transaction_id is unique so re-running a
+-- sync is a no-op for transactions already imported (upsert-by-conflict).
+alter table transactions add column if not exists plaid_transaction_id text unique;
+alter table transactions add column if not exists bank_account_id uuid references bank_accounts(id) on delete set null;
+alter table transactions add column if not exists pending boolean not null default false;
+
 -- Per-person PDF branding / business-info preferences. Unlike every table
 -- above (shared across the whole team, see the RLS policies below), this
 -- one is intentionally private to each signed-in user — one row per
@@ -151,6 +191,8 @@ alter table todos enable row level security;
 alter table events enable row level security;
 alter table transactions enable row level security;
 alter table user_settings enable row level security;
+alter table plaid_items enable row level security;
+alter table bank_accounts enable row level security;
 
 -- Business data is a shared team workspace: any signed-in user (you and
 -- your business partner) can see and edit every record, not just the ones
@@ -196,3 +238,14 @@ create policy "team can manage transactions" on transactions
 drop policy if exists "user manages own settings" on user_settings;
 create policy "user manages own settings" on user_settings
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- plaid_items intentionally gets no policy at all — RLS is enabled with
+-- zero grants, so every client-side request (even from a signed-in team
+-- member) is denied by default. Only Edge Functions using the
+-- service_role key, which bypasses RLS, can read or write this table.
+
+-- bank_accounts is metadata-only (no credentials), so it's shared like
+-- the rest of the business tables.
+drop policy if exists "team can manage bank_accounts" on bank_accounts;
+create policy "team can manage bank_accounts" on bank_accounts
+  for all using (auth.uid() is not null) with check (auth.uid() is not null);
