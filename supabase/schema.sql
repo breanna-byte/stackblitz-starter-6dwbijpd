@@ -113,8 +113,15 @@ create table if not exists transactions (
   receipt_image text,
   notes text,
   client_id uuid references clients(id) on delete set null,
+  -- shared by every generated occurrence of a recurring bill; null for
+  -- one-off transactions and for income/expenses (only bills can recur).
+  series_id uuid,
   created_at timestamptz default now()
 );
+
+-- Safe to re-run: adds series_id to projects that ran an earlier version
+-- of this schema before recurring bills existed.
+alter table transactions add column if not exists series_id uuid;
 
 -- Bank sync was tried (Plaid, then Teller) and dropped. These statements
 -- clean up anything an earlier run of this file may have created — safe

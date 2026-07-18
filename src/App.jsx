@@ -21,9 +21,7 @@ import Schedule from './pages/Schedule'
 import Todos from './pages/Todos'
 import Receipts from './pages/Receipts'
 import MapPage from './pages/MapPage'
-import Income from './pages/Income'
-import Expenses from './pages/Expenses'
-import Bills from './pages/Bills'
+import Transactions from './pages/Transactions'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 
@@ -41,9 +39,7 @@ const NAV = [
     { key: 'map', label: 'Job Site Map', icon: '⚲' },
   ]},
   { section: 'Money', items: [
-    { key: 'income', label: 'Income', icon: '↑' },
-    { key: 'expenses', label: 'Expenses', icon: '↓' },
-    { key: 'bills', label: 'Bills', icon: '▤' },
+    { key: 'transactions', label: 'Transactions', icon: '$' },
     { key: 'receipts', label: 'Receipt Ledger', icon: '📷' },
     { key: 'reports', label: 'Profit & Loss', icon: '∑' },
   ]},
@@ -282,7 +278,30 @@ export default function App() {
         vendor_or_source: withId.vendorOrSource, amount: withId.amount,
         date: withId.date, due_date: withId.dueDate || null, status: withId.status,
         receipt_image: withId.receiptImage, notes: withId.notes, client_id: withId.clientId,
+        series_id: withId.seriesId || null,
       }).then(() => {})
+    }
+  }
+
+  // Creates one bill, or -- if recurrence is enabled -- a whole dated
+  // series sharing a seriesId, each a fully independent editable bill.
+  function addBillSeries({ vendorOrSource, category, amount, date, dueDate, notes, recurrence }) {
+    const dueDelta = date && dueDate ? daysBetween(date, dueDate) : null
+    const dates = generateOccurrences(date, recurrence)
+    const seriesId = dates.length > 1 ? crypto.randomUUID() : null
+    const newBills = dates.map(d => ({
+      id: crypto.randomUUID(), type: 'bill', category, vendorOrSource,
+      amount: Number(amount) || 0, date: d,
+      dueDate: dueDelta !== null ? shiftDate(d, dueDelta) : '',
+      status: 'unpaid', notes, clientId: null, seriesId,
+    }))
+    setTransactions(prev => [...newBills, ...prev])
+    if (hasSupabase) {
+      supabase.from('transactions').insert(newBills.map(b => ({
+        id: b.id, type: b.type, category: b.category, vendor_or_source: b.vendorOrSource,
+        amount: b.amount, date: b.date, due_date: b.dueDate || null, status: b.status,
+        notes: b.notes, client_id: b.clientId, series_id: b.seriesId,
+      }))).then(() => {})
     }
   }
 
@@ -296,6 +315,11 @@ export default function App() {
   function removeTransaction(id) {
     setTransactions(prev => prev.filter(t => t.id !== id))
     if (hasSupabase) supabase.from('transactions').delete().eq('id', id).then(() => {})
+  }
+
+  function removeTransactionSeries(seriesId) {
+    setTransactions(prev => prev.filter(t => t.seriesId !== seriesId))
+    if (hasSupabase) supabase.from('transactions').delete().eq('series_id', seriesId).then(() => {})
   }
 
   function addEvent(event) {
@@ -401,6 +425,7 @@ export default function App() {
     if (kind === 'job-series') removeJobSeries(id)
     if (kind === 'invoice') removeInvoice(id)
     if (kind === 'invoice-series') removeInvoiceSeries(id)
+    if (kind === 'transaction-series') removeTransactionSeries(id)
     setConfirmDelete(null)
   }
 
@@ -514,17 +539,13 @@ export default function App() {
 
         {tab === 'map' && <MapPage clients={clients} />}
 
-        {tab === 'income' && (
-          <Income transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction}
-            removeTransaction={removeTransaction} clientById={clientById} />
-        )}
-        {tab === 'expenses' && (
-          <Expenses transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction}
-            removeTransaction={removeTransaction} clientById={clientById} />
-        )}
-        {tab === 'bills' && (
-          <Bills transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction}
-            removeTransaction={removeTransaction} clientById={clientById} />
+        {tab === 'transactions' && (
+          <Transactions
+            transactions={transactions} addTransaction={addTransaction} addBillSeries={addBillSeries}
+            updateTransaction={updateTransaction} removeTransaction={removeTransaction}
+            onDeleteSeries={(seriesId, label) => requestDelete('transaction-series', seriesId, label)}
+            clientById={clientById}
+          />
         )}
         {tab === 'receipts' && (
           <Receipts transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction}

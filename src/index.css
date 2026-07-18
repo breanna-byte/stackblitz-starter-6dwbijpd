@@ -259,6 +259,9 @@ tbody tr:last-child td { border-bottom: none; }
 .badge-accepted, .badge-paid { background: var(--green-bg); color: var(--green); }
 .badge-declined, .badge-overdue { background: var(--red-bg); color: var(--red); }
 .badge-active { background: var(--green-bg); color: var(--green); }
+.badge-income { background: var(--green-bg); color: var(--green); }
+.badge-expense { background: var(--red-bg); color: var(--red); }
+.badge-bill { background: rgba(242,163,31,0.15); color: var(--amber-dark); }
 
 /* ---------- Forms ---------- */
 .field { display: flex; flex-direction: column; gap: 5px; }

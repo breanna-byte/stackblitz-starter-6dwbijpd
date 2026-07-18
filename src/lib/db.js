@@ -53,6 +53,7 @@ export function rowToTransaction(r) {
     id: r.id, type: r.type, category: r.category, vendorOrSource: r.vendor_or_source || '',
     amount: Number(r.amount) || 0, date: r.date, dueDate: r.due_date || '', status: r.status,
     receiptImage: r.receipt_image, notes: r.notes || '', clientId: r.client_id,
+    seriesId: r.series_id,
   }
 }
 

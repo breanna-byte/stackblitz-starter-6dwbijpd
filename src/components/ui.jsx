@@ -2,6 +2,7 @@ export const STATUS_LABEL = {
   draft: 'Draft', sent: 'Sent', accepted: 'Accepted', declined: 'Declined',
   scheduled: 'Scheduled', in_progress: 'In progress', complete: 'Complete',
   paid: 'Paid', overdue: 'Overdue', unpaid: 'Unpaid', recorded: 'Recorded',
+  income: 'Income', expense: 'Expense', bill: 'Bill',
 }
 
 export function Stat({ label, value, color, sub }) {
