@@ -19,8 +19,8 @@ export function clientLabel(client) {
 export function rowToEstimate(r) {
   return {
     id: r.id, clientId: r.client_id, title: r.title, status: r.status,
-    taxRate: Number(r.tax_rate) || 0, globalDiscount: Number(r.global_discount) || 0,
-    items: r.items || [], createdAt: (r.created_at || '').slice(0, 10),
+    header: r.header || {}, lineItems: r.line_items || [],
+    markupPct: Number(r.markup_pct) || 0, taxRate: Number(r.tax_rate) || 0, terms: r.terms || '',
   }
 }
 
@@ -35,8 +35,9 @@ export function rowToJob(r) {
 export function rowToInvoice(r) {
   return {
     id: r.id, estimateId: r.estimate_id, jobId: r.job_id, clientId: r.client_id,
-    status: r.status, issuedAt: r.issued_at || '', dueAt: r.due_at || '',
-    amount: r.amount === null ? null : Number(r.amount), depositPct: Number(r.deposit_pct) || 0,
+    paymentStatus: r.payment_status,
+    header: r.header || {}, lineItems: r.line_items || [],
+    markupPct: Number(r.markup_pct) || 0, taxRate: Number(r.tax_rate) || 0, terms: r.terms || '',
     seriesId: r.series_id,
   }
 }

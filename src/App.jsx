@@ -2,19 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase, hasSupabase } from './supabaseClient'
 import { seedClients, seedEstimates, seedJobs, seedInvoices, seedTodos, seedEvents, seedTransactions } from './lib/seed'
 import {
-  emptyLineItem, linePrice,
-  computeEstimateTotals, formatCurrency,
+  emptyLineItem, emptyHeader, nextRecordNumber,
+  computeDocumentTotals, formatCurrency,
 } from './lib/calc'
 import { computePL } from './lib/finance'
 import { defaultSettings, loadSettings, saveSettings } from './lib/businessSettings'
 import { generateEstimatePDF, generateInvoicePDF } from './lib/pdf'
-import { generateOccurrences, emptyRecurrence, daysBetween, shiftDate } from './lib/recurrence'
+import { generateOccurrences, daysBetween, shiftDate } from './lib/recurrence'
 import {
   rowToClient, rowToEstimate, rowToJob, rowToInvoice,
   rowToTodo, rowToEvent, rowToTransaction, rowToSettings, settingsToRow, clientLabel,
 } from './lib/db'
 import { PageHeader, Stat, EmptyState, Badge, ConfirmDialog, STATUS_LABEL } from './components/ui'
-import RecurrenceFields from './components/RecurrenceFields'
 import Login from './components/Login'
 
 import Schedule from './pages/Schedule'
@@ -25,6 +24,8 @@ import Transactions from './pages/Transactions'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Jobs from './pages/Jobs'
+import Estimates from './pages/Estimates'
+import Invoices from './pages/Invoices'
 
 const NAV = [
   { section: 'Overview', items: [{ key: 'dashboard', label: 'Dashboard', icon: '◧' }] },
@@ -64,6 +65,7 @@ export default function App() {
   const [events, setEvents] = useState(hasSupabase ? [] : seedEvents)
   const [transactions, setTransactions] = useState(hasSupabase ? [] : seedTransactions)
   const [activeEstimateId, setActiveEstimateId] = useState(null)
+  const [activeInvoiceId, setActiveInvoiceId] = useState(null)
   const [clientModalOpen, setClientModalOpen] = useState(false)
   const [editingClient, setEditingClient] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null) // { kind, id, label }
@@ -149,7 +151,22 @@ export default function App() {
     if (hasSupabase) {
       supabase.from('estimates').upsert({
         id: est.id, client_id: est.clientId, title: est.title, status: est.status,
-        tax_rate: est.taxRate, global_discount: est.globalDiscount, items: est.items,
+        header: est.header, line_items: est.lineItems, markup_pct: est.markupPct,
+        tax_rate: est.taxRate, terms: est.terms,
+      }).then(() => {})
+    }
+  }
+
+  function upsertInvoice(inv) {
+    setInvoices(prev => {
+      const exists = prev.some(i => i.id === inv.id)
+      return exists ? prev.map(i => i.id === inv.id ? inv : i) : [inv, ...prev]
+    })
+    if (hasSupabase) {
+      supabase.from('invoices').upsert({
+        id: inv.id, estimate_id: inv.estimateId, job_id: inv.jobId, client_id: inv.clientId,
+        payment_status: inv.paymentStatus, header: inv.header, line_items: inv.lineItems,
+        markup_pct: inv.markupPct, tax_rate: inv.taxRate, terms: inv.terms, series_id: inv.seriesId,
       }).then(() => {})
     }
   }
@@ -238,13 +255,9 @@ export default function App() {
     }
   }
 
-  function updateInvoice(id, partial) {
-    setInvoices(prev => prev.map(i => i.id === id ? { ...i, ...partial } : i))
-    if (hasSupabase) supabase.from('invoices').update(partial).eq('id', id).then(() => {})
-  }
-
   function removeInvoice(id) {
     setInvoices(prev => prev.filter(i => i.id !== id))
+    if (activeInvoiceId === id) setActiveInvoiceId(null)
     if (hasSupabase) supabase.from('invoices').delete().eq('id', id).then(() => {})
   }
 
@@ -254,31 +267,43 @@ export default function App() {
   }
 
   // Creates one invoice, or — if recurrence is enabled — a whole dated
-  // series (e.g. a monthly service retainer), each its own editable record.
-  function addInvoice({ clientId, issuedAt, dueAt, amount, depositPct, notes, recurrence }) {
-    const dueDelta = issuedAt && dueAt ? daysBetween(issuedAt, dueAt) : null
-    const dates = generateOccurrences(issuedAt, recurrence)
+  // series (e.g. a monthly service retainer), each its own editable
+  // record starting with no line items — those are added next, in the
+  // invoice editor (mirrors how a new estimate opens straight into its
+  // editor). Record numbers are assigned in order within the batch so a
+  // recurring series doesn't come out with duplicate numbers.
+  function addInvoice({ clientId, issueDate, dueDate, recurrence }) {
+    const client = clientById(clientId) || null
+    const dueDelta = issueDate && dueDate ? daysBetween(issueDate, dueDate) : null
+    const dates = generateOccurrences(issueDate, recurrence)
     const seriesId = dates.length > 1 ? crypto.randomUUID() : null
-    const newInvoices = dates.map((d, i) => ({
-      id: crypto.randomUUID(),
-      estimateId: null,
-      jobId: null,
-      clientId,
-      status: 'draft',
-      issuedAt: d,
-      dueAt: dueDelta !== null ? shiftDate(d, dueDelta) : '',
-      amount: Number(amount) || 0,
-      depositPct: depositPct || 0,
-      notes,
-      seriesId,
-    }))
+    let running = invoices
+    const newInvoices = dates.map(d => {
+      const recordNumber = nextRecordNumber('INV', running)
+      const inv = {
+        id: crypto.randomUUID(), estimateId: null, jobId: null, clientId,
+        paymentStatus: 'unpaid',
+        header: emptyHeader({
+          recordNumber, client, issueDate: d,
+          dueDate: dueDelta !== null ? shiftDate(d, dueDelta) : null,
+        }),
+        lineItems: [], markupPct: 20, taxRate: 4.2, terms: '',
+        seriesId,
+      }
+      running = [...running, inv]
+      return inv
+    })
     setInvoices(prev => [...newInvoices, ...prev])
     if (hasSupabase) {
       supabase.from('invoices').insert(newInvoices.map(inv => ({
         id: inv.id, estimate_id: inv.estimateId, job_id: inv.jobId, client_id: inv.clientId,
-        status: inv.status, issued_at: inv.issuedAt, due_at: inv.dueAt || null,
-        amount: inv.amount, deposit_pct: inv.depositPct, series_id: inv.seriesId,
+        payment_status: inv.paymentStatus, header: inv.header, line_items: inv.lineItems,
+        markup_pct: inv.markupPct, tax_rate: inv.taxRate, terms: inv.terms, series_id: inv.seriesId,
       }))).then(() => {})
+    }
+    if (newInvoices.length === 1) {
+      setActiveInvoiceId(newInvoices[0].id)
+      setTab('invoices')
     }
   }
 
@@ -380,15 +405,17 @@ export default function App() {
   }
 
   function newEstimate() {
+    const client = clients[0] || null
     const est = {
       id: crypto.randomUUID(),
-      clientId: clients[0]?.id ?? null,
+      clientId: client?.id ?? null,
       title: 'Untitled estimate',
       status: 'draft',
+      header: emptyHeader({ recordNumber: nextRecordNumber('EST', estimates), client }),
+      lineItems: [emptyLineItem('Materials'), emptyLineItem('Labor')],
+      markupPct: 20,
       taxRate: 4.2,
-      globalDiscount: 0,
-      createdAt: new Date().toISOString().slice(0, 10),
-      items: [emptyLineItem('material'), emptyLineItem('labor')],
+      terms: '',
     }
     setEstimates(prev => [est, ...prev])
     setActiveEstimateId(est.id)
@@ -410,18 +437,26 @@ export default function App() {
     setTab('jobs')
   }
 
+  // Copies the estimate's line items, markup, tax, and terms straight
+  // into a new invoice, so "what we're billing for" starts out identical
+  // to "what we quoted" — editable afterward like any other invoice.
   function convertToInvoice(est) {
     const inv = {
       id: crypto.randomUUID(), estimateId: est.id, jobId: null, clientId: est.clientId,
-      status: 'draft', issuedAt: new Date().toISOString().slice(0, 10), dueAt: '', amount: null, depositPct: 0, seriesId: null,
+      paymentStatus: 'unpaid',
+      header: emptyHeader({ recordNumber: nextRecordNumber('INV', invoices), client: est.header.client }),
+      lineItems: est.lineItems, markupPct: est.markupPct, taxRate: est.taxRate, terms: est.terms,
+      seriesId: null,
     }
     setInvoices(prev => [inv, ...prev])
     if (hasSupabase) {
       supabase.from('invoices').insert({
         id: inv.id, estimate_id: inv.estimateId, job_id: inv.jobId, client_id: inv.clientId,
-        status: inv.status, issued_at: inv.issuedAt, due_at: null, amount: inv.amount, deposit_pct: inv.depositPct, series_id: null,
+        payment_status: inv.paymentStatus, header: inv.header, line_items: inv.lineItems,
+        markup_pct: inv.markupPct, tax_rate: inv.taxRate, terms: inv.terms, series_id: inv.seriesId,
       }).then(() => {})
     }
+    setActiveInvoiceId(inv.id)
     setTab('invoices')
   }
 
@@ -460,7 +495,11 @@ export default function App() {
               <button
                 key={n.key}
                 className={`nav-item ${tab === n.key ? 'active' : ''}`}
-                onClick={() => { setTab(n.key); if (n.key !== 'estimates') setActiveEstimateId(null) }}
+                onClick={() => {
+                  setTab(n.key)
+                  if (n.key !== 'estimates') setActiveEstimateId(null)
+                  if (n.key !== 'invoices') setActiveInvoiceId(null)
+                }}
               >
                 <span className="nav-icon">{n.icon}</span>{n.label}
               </button>
@@ -493,26 +532,18 @@ export default function App() {
           />
         )}
 
-        {tab === 'estimates' && !activeEstimate && (
-          <EstimateList
-            estimates={estimates} clientById={clientById}
+        {tab === 'estimates' && (
+          <Estimates
+            estimates={estimates} clients={clients} clientById={clientById} settings={settings}
+            activeEstimate={activeEstimate}
             onOpen={(id) => setActiveEstimateId(id)}
-            onNew={newEstimate}
-            onDelete={(id, title) => requestDelete('estimate', id, title)}
-            onDownload={(est) => generateEstimatePDF(est, clientById(est.clientId), settings)}
-          />
-        )}
-
-        {tab === 'estimates' && activeEstimate && (
-          <EstimateBuilder
-            estimate={activeEstimate}
-            clients={clients}
-            settings={settings}
-            onChange={upsertEstimate}
             onBack={() => setActiveEstimateId(null)}
+            onNew={newEstimate}
+            onChange={upsertEstimate}
+            onDelete={(id, title) => requestDelete('estimate', id, title)}
             onConvertJob={convertToJob}
             onConvertInvoice={convertToInvoice}
-            onDelete={() => requestDelete('estimate', activeEstimate.id, activeEstimate.title)}
+            onDownload={(est) => generateEstimatePDF(est, settings)}
           />
         )}
 
@@ -527,11 +558,15 @@ export default function App() {
 
         {tab === 'invoices' && (
           <Invoices
-            invoices={invoices} estimates={estimates} clients={clients} clientById={clientById}
-            addInvoice={addInvoice} updateInvoice={updateInvoice}
+            invoices={invoices} clients={clients} clientById={clientById} settings={settings}
+            activeInvoice={invoices.find(i => i.id === activeInvoiceId) || null}
+            onOpen={(id) => setActiveInvoiceId(id)}
+            onBack={() => setActiveInvoiceId(null)}
+            onCreate={addInvoice}
+            onChange={upsertInvoice}
             onDelete={(id, label) => requestDelete('invoice', id, label)}
             onDeleteSeries={(seriesId, label) => requestDelete('invoice-series', seriesId, label)}
-            settings={settings}
+            onDownload={(inv) => generateInvoicePDF(inv, settings)}
           />
         )}
 
@@ -601,12 +636,16 @@ export default function App() {
 /* ----------------------------- Dashboard ----------------------------- */
 
 function Dashboard({ estimates, jobs, invoices, transactions, clientById, onNewEstimate, onOpenEstimate }) {
-  const totals = estimates.map(e => ({ e, t: computeEstimateTotals(e.items, e) }))
+  const totals = estimates.map(e => {
+    const t = computeDocumentTotals(e.lineItems, e)
+    const marginPct = t.pricedSubtotal > 0 ? (t.profit / t.pricedSubtotal) * 100 : 0
+    return { e, t: { ...t, marginPct } }
+  })
   const pipelineValue = totals.filter(x => x.e.status !== 'declined').reduce((s, x) => s + x.t.total, 0)
   const won = totals.filter(x => x.e.status === 'accepted')
   const sentOrAccepted = totals.filter(x => ['sent', 'accepted', 'declined'].includes(x.e.status))
   const winRate = sentOrAccepted.length ? Math.round((won.length / sentOrAccepted.length) * 100) : 0
-  const openInvoices = invoices.filter(i => i.status !== 'paid').length
+  const openInvoices = invoices.filter(i => i.paymentStatus !== 'paid').length
   const activeJobs = jobs.filter(j => j.status !== 'complete').length
   const pl = computePL(transactions)
 
@@ -656,345 +695,6 @@ function Dashboard({ estimates, jobs, invoices, transactions, clientById, onNewE
         </div>
       </div>
     </>
-  )
-}
-
-/* ----------------------------- Estimates ----------------------------- */
-
-function EstimateList({ estimates, clientById, onOpen, onNew, onDelete, onDownload }) {
-  return (
-    <>
-      <PageHeader
-        title="Estimates & Bids"
-        subtitle="Build a quote and watch price, margin, and tax calculate live."
-        action={<button className="btn btn-amber" onClick={onNew}>+ New estimate</button>}
-      />
-
-      {estimates.length === 0 ? (
-        <EmptyState title="No estimates yet" subtitle="Create your first estimate to start quoting jobs." />
-      ) : (
-        <div className="card">
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Client</th><th>Title</th><th>Created</th><th>Status</th><th style={{ textAlign: 'right' }}>Total</th><th></th></tr>
-              </thead>
-              <tbody>
-                {estimates.map(e => {
-                  const t = computeEstimateTotals(e.items, e)
-                  return (
-                    <tr key={e.id}>
-                      <td>{clientById(e.clientId) ? clientLabel(clientById(e.clientId)) : '—'}</td>
-                      <td>{e.title}</td>
-                      <td className="figure">{e.createdAt}</td>
-                      <td><Badge status={e.status} /></td>
-                      <td className="figure" style={{ textAlign: 'right' }}>{formatCurrency(t.total)}</td>
-                      <td>
-                        <div className="row-actions">
-                          <button className="btn btn-ghost btn-sm" onClick={() => onDownload(e)}>PDF</button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => onOpen(e.id)}>Open</button>
-                          <button className="btn btn-danger-ghost btn-sm" onClick={() => onDelete(e.id, e.title)}>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
-
-function EstimateBuilder({ estimate, clients, settings, onChange, onBack, onConvertJob, onConvertInvoice, onDelete }) {
-  const [pulse, setPulse] = useState(false)
-  const totals = useMemo(() => computeEstimateTotals(estimate.items, estimate), [estimate])
-
-  function patch(partial) {
-    onChange({ ...estimate, ...partial })
-    setPulse(true)
-    setTimeout(() => setPulse(false), 350)
-  }
-
-  function updateItem(id, partial) {
-    patch({ items: estimate.items.map(it => it.id === id ? { ...it, ...partial } : it) })
-  }
-
-  function removeItem(id) {
-    patch({ items: estimate.items.filter(it => it.id !== id) })
-  }
-
-  function addItem(type) {
-    patch({ items: [...estimate.items, emptyLineItem(type)] })
-  }
-
-  return (
-    <>
-      <div className="topbar">
-        <div>
-          <button className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }} onClick={onBack}>← All estimates</button>
-          <input
-            className="page-title"
-            style={{ border: 'none', background: 'transparent', padding: 0, fontFamily: 'var(--font-display)', width: '100%' }}
-            value={estimate.title}
-            onChange={e => patch({ title: e.target.value })}
-          />
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost" onClick={() => generateEstimatePDF(estimate, clients.find(c => c.id === estimate.clientId), settings, { notes: estimate.notes || undefined })}>⬇ Download PDF</button>
-          <button className="btn btn-ghost" onClick={() => onConvertJob(estimate)}>Convert to job</button>
-          <button className="btn btn-primary" onClick={() => onConvertInvoice(estimate)}>Convert to invoice</button>
-          <button className="btn btn-danger-ghost" onClick={onDelete}>Delete</button>
-        </div>
-      </div>
-
-      <div className="field-row" style={{ gridTemplateColumns: '1fr 1fr 1fr', marginBottom: 18 }}>
-        <div className="field">
-          <label>Client</label>
-          <select value={estimate.clientId ?? ''} onChange={e => patch({ clientId: e.target.value })}>
-            {clients.map(c => <option key={c.id} value={c.id}>{clientLabel(c)}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label>Status</label>
-          <select value={estimate.status} onChange={e => patch({ status: e.target.value })}>
-            {['draft', 'sent', 'accepted', 'declined'].map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label>Tax rate (%) — applied to taxable materials</label>
-          <input type="number" step="0.1" className="figure" value={estimate.taxRate}
-            onChange={e => patch({ taxRate: Number(e.target.value) })} />
-        </div>
-      </div>
-
-      <div className="builder-grid">
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-            <strong style={{ fontFamily: 'var(--font-display)', fontSize: 15 }}>Line items</strong>
-          </div>
-          <div className="table-wrap">
-            <table className="line-items-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '28%' }}>Description</th>
-                  <th style={{ width: 80 }}>Type</th>
-                  <th style={{ width: 70 }}>Qty / hrs</th>
-                  <th style={{ width: 100 }}>Unit cost</th>
-                  <th style={{ width: 70 }}>Markup %</th>
-                  <th style={{ width: 60 }}>Tax</th>
-                  <th style={{ width: 100, textAlign: 'right' }}>Price</th>
-                  <th style={{ width: 30 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {estimate.items.map(it => (
-                  <tr key={it.id}>
-                    <td><input type="text" placeholder="What is this line for?" value={it.description}
-                      onChange={e => updateItem(it.id, { description: e.target.value })} /></td>
-                    <td>
-                      <select value={it.type} onChange={e => updateItem(it.id, { type: e.target.value })}>
-                        <option value="material">Material</option>
-                        <option value="labor">Labor</option>
-                      </select>
-                    </td>
-                    <td><input type="number" value={it.qty} onChange={e => updateItem(it.id, { qty: e.target.value })} /></td>
-                    <td><input type="number" value={it.unitCost} onChange={e => updateItem(it.id, { unitCost: e.target.value })} /></td>
-                    <td><input type="number" value={it.markup} onChange={e => updateItem(it.id, { markup: e.target.value })} /></td>
-                    <td style={{ textAlign: 'center' }}>
-                      <input type="checkbox" checked={it.taxable} onChange={e => updateItem(it.id, { taxable: e.target.checked })} />
-                    </td>
-                    <td className="line-total" style={{ textAlign: 'right' }}>{formatCurrency(linePrice(it))}</td>
-                    <td><button className="icon-btn" onClick={() => removeItem(it.id)} title="Remove line">✕</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button className="add-row-btn" onClick={() => addItem('material')}>+ Add material line</button>
-            <button className="add-row-btn" onClick={() => addItem('labor')}>+ Add labor line</button>
-          </div>
-
-          <div className="field-row" style={{ gridTemplateColumns: '1fr', marginTop: 18 }}>
-            <div className="field">
-              <label>Discount on subtotal (%)</label>
-              <input type="number" step="1" className="figure" style={{ maxWidth: 140 }}
-                value={estimate.globalDiscount} onChange={e => patch({ globalDiscount: Number(e.target.value) })} />
-            </div>
-          </div>
-
-          <div className="field-row" style={{ gridTemplateColumns: '1fr', marginTop: 12 }}>
-            <div className="field">
-              <label>PDF terms for this estimate (optional — overrides your default terms in Settings)</label>
-              <textarea rows={2} placeholder={settings.estimateTerms} value={estimate.notes || ''}
-                onChange={e => patch({ notes: e.target.value })} />
-            </div>
-          </div>
-        </div>
-
-        <div className="ticker">
-          <div className="ticker-title">Auto price calculator</div>
-          <div className="ticker-row"><span>Cost (materials + labor)</span><span>{formatCurrency(totals.totalCost)}</span></div>
-          <div className="ticker-row"><span>Subtotal (customer price)</span><span>{formatCurrency(totals.subtotal)}</span></div>
-          {estimate.globalDiscount > 0 && (
-            <div className="ticker-row"><span>Discount ({estimate.globalDiscount}%)</span><span>-{formatCurrency(totals.discountAmt)}</span></div>
-          )}
-          <div className="ticker-row"><span>Tax ({estimate.taxRate}%)</span><span>{formatCurrency(totals.taxAmt)}</span></div>
-          <div className="ticker-total">
-            <span>Quote total</span>
-            <span className={`amt ${pulse ? 'pulse' : ''}`}>{formatCurrency(totals.total)}</span>
-          </div>
-          <div className="margin-note">
-            Estimated profit {formatCurrency(totals.profit)} · {totals.marginPct.toFixed(1)}% margin on this job.
-            Adjust markup per line to hit your target margin before you send it.
-          </div>
-        </div>
-      </div>
-    </>
-  )
-}
-
-/* ----------------------------- Invoices ----------------------------- */
-
-function Invoices({ invoices, estimates, clients, clientById, addInvoice, updateInvoice, onDelete, onDeleteSeries, settings }) {
-  const [editingInvoice, setEditingInvoice] = useState(null)
-  const [creating, setCreating] = useState(false)
-
-  function markPaid(id) {
-    updateInvoice(id, { status: 'paid' })
-  }
-
-  return (
-    <>
-      <PageHeader
-        title="Invoices"
-        subtitle="Track what's owed, sent, and paid."
-        action={<button className="btn btn-amber" onClick={() => setCreating(true)}>+ New invoice</button>}
-      />
-      {invoices.length === 0 ? (
-        <EmptyState title="No invoices yet" subtitle="Convert an estimate to an invoice, or create one directly." />
-      ) : (
-        <div className="card">
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Client</th><th>Issued</th><th>Due</th><th>Status</th><th style={{ textAlign: 'right' }}>Amount</th><th></th></tr></thead>
-              <tbody>
-                {invoices.map(inv => {
-                  const est = estimates.find(e => e.id === inv.estimateId)
-                  const total = est ? computeEstimateTotals(est.items, est).total : (inv.amount ?? 0)
-                  const client = clientById(inv.clientId)
-                  return (
-                    <tr key={inv.id}>
-                      <td>{client ? clientLabel(client) : '—'}{inv.seriesId && <span className="series-badge">↻ recurring</span>}</td>
-                      <td className="figure">{inv.issuedAt}</td>
-                      <td className="figure">{inv.dueAt || '—'}</td>
-                      <td><Badge status={inv.status} /></td>
-                      <td className="figure" style={{ textAlign: 'right' }}>{formatCurrency(total)}</td>
-                      <td>
-                        <div className="row-actions">
-                          <button className="btn btn-ghost btn-sm" onClick={() => generateInvoicePDF(inv, est, client, settings, total, { notes: inv.notes || undefined })}>PDF</button>
-                          {inv.status !== 'paid' && (
-                            <button className="btn btn-ghost btn-sm" onClick={() => markPaid(inv.id)}>Mark paid</button>
-                          )}
-                          <button className="btn btn-ghost btn-sm" onClick={() => setEditingInvoice(inv)}>Edit</button>
-                          <button className="btn btn-danger-ghost btn-sm" onClick={() => onDelete(inv.id, client ? clientLabel(client) : 'this invoice')}>Delete</button>
-                          {inv.seriesId && (
-                            <button className="btn btn-danger-ghost btn-sm" onClick={() => onDeleteSeries(inv.seriesId, client ? clientLabel(client) : 'this series')}>Delete series</button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {editingInvoice && (
-        <InvoiceModal
-          invoice={editingInvoice}
-          clients={clients}
-          onClose={() => setEditingInvoice(null)}
-          onSave={(partial) => { updateInvoice(editingInvoice.id, partial); setEditingInvoice(null) }}
-        />
-      )}
-
-      {creating && (
-        <InvoiceModal
-          clients={clients}
-          onClose={() => setCreating(false)}
-          onSave={(form) => { addInvoice(form); setCreating(false) }}
-        />
-      )}
-    </>
-  )
-}
-
-function InvoiceModal({ invoice, clients, onClose, onSave }) {
-  const isEdit = Boolean(invoice)
-  const [form, setForm] = useState(isEdit
-    ? {
-        clientId: invoice.clientId, status: invoice.status, issuedAt: invoice.issuedAt || '',
-        dueAt: invoice.dueAt || '', depositPct: invoice.depositPct || 0, notes: invoice.notes || '',
-        amount: invoice.amount || 0,
-      }
-    : {
-        clientId: clients[0]?.id ?? '', status: 'draft', issuedAt: new Date().toISOString().slice(0, 10),
-        dueAt: '', depositPct: 0, notes: '', amount: 0,
-      })
-  const [recurrence, setRecurrence] = useState(emptyRecurrence())
-  const noLinkedEstimate = !isEdit || !invoice.estimateId
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2>{isEdit ? 'Edit invoice' : 'New invoice'}</h2>
-        <div className="field-row" style={{ gridTemplateColumns: '1fr', gap: 12 }}>
-          <div className="field"><label>Client</label>
-            <select value={form.clientId ?? ''} onChange={e => setForm({ ...form, clientId: e.target.value })}>
-              {clients.map(c => <option key={c.id} value={c.id}>{clientLabel(c)}</option>)}
-            </select>
-          </div>
-          <div className="field-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
-            <div className="field"><label>Issued date</label>
-              <input type="date" value={form.issuedAt} onChange={e => setForm({ ...form, issuedAt: e.target.value })} /></div>
-            <div className="field"><label>Due date</label>
-              <input type="date" value={form.dueAt} onChange={e => setForm({ ...form, dueAt: e.target.value })} /></div>
-          </div>
-          <div className="field-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
-            <div className="field"><label>Status</label>
-              <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-                {['draft', 'sent', 'paid', 'overdue'].map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-              </select>
-            </div>
-            <div className="field"><label>Deposit %</label>
-              <input type="number" className="figure" value={form.depositPct} onChange={e => setForm({ ...form, depositPct: Number(e.target.value) })} /></div>
-          </div>
-          {noLinkedEstimate && (
-            <div className="field"><label>Amount {isEdit && !invoice.estimateId ? '' : '(this invoice is not linked to an estimate)'}</label>
-              <input type="number" step="0.01" className="figure" value={form.amount}
-                onChange={e => setForm({ ...form, amount: Number(e.target.value) })} /></div>
-          )}
-          <div className="field"><label>PDF terms for this invoice (optional override)</label>
-            <textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
-          {!isEdit && (
-            <RecurrenceFields recurrence={recurrence} onChange={setRecurrence} disabled={!form.issuedAt} />
-          )}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={!form.clientId}
-            onClick={() => onSave(isEdit ? form : { ...form, recurrence })}>
-            {isEdit ? 'Save invoice' : 'Create invoice'}
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }
 

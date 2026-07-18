@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { PageHeader, EmptyState, Stat, STATUS_LABEL } from '../components/ui'
 import RecurrenceFields from '../components/RecurrenceFields'
 import { emptyRecurrence } from '../lib/recurrence'
-import { computeEstimateTotals, formatCurrency } from '../lib/calc'
+import { computeDocumentTotals, formatCurrency } from '../lib/calc'
 import { clientLabel } from '../lib/db'
 
 export default function Jobs({ jobs, clients, clientById, estimates, addJob, updateJob, onDelete, onDeleteSeries }) {
@@ -125,9 +125,9 @@ function JobDetail({ job, clients, estimates, onClose, onSave }) {
   })
 
   const estimate = estimates.find(e => e.id === job.estimateId) || null
-  const totals = estimate ? computeEstimateTotals(estimate.items, estimate) : null
+  const totals = estimate ? computeDocumentTotals(estimate.lineItems, estimate) : null
   const estimatedHours = estimate
-    ? estimate.items.filter(it => it.type === 'labor').reduce((s, it) => s + (Number(it.qty) || 0), 0)
+    ? estimate.lineItems.filter(it => it.category === 'Labor').reduce((s, it) => s + (Number(it.qty) || 0), 0)
     : 0
 
   function patch(partial) { setForm(f => ({ ...f, ...partial })) }
