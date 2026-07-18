@@ -56,8 +56,21 @@ create table if not exists jobs (
   -- shared by every generated occurrence of a recurring job; null for
   -- one-off jobs. See src/lib/recurrence.js.
   series_id uuid,
+  notes text,
+  -- reminders: [{id,text}], checklist: [{id,text,done}],
+  -- materials: [{id,name,qty}] — see src/pages/Jobs.jsx.
+  reminders jsonb not null default '[]',
+  checklist jsonb not null default '[]',
+  materials jsonb not null default '[]',
   created_at timestamptz default now()
 );
+
+-- Safe to re-run: adds job-detail fields to projects that ran an earlier
+-- version of this schema before they existed.
+alter table jobs add column if not exists notes text;
+alter table jobs add column if not exists reminders jsonb not null default '[]';
+alter table jobs add column if not exists checklist jsonb not null default '[]';
+alter table jobs add column if not exists materials jsonb not null default '[]';
 
 create table if not exists invoices (
   id uuid primary key default gen_random_uuid(),

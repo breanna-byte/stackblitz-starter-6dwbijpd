@@ -24,6 +24,7 @@ import MapPage from './pages/MapPage'
 import Transactions from './pages/Transactions'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
+import Jobs from './pages/Jobs'
 
 const NAV = [
   { section: 'Overview', items: [{ key: 'dashboard', label: 'Dashboard', icon: '◧' }] },
@@ -187,7 +188,19 @@ export default function App() {
 
   function updateJob(id, partial) {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, ...partial } : j))
-    if (hasSupabase) supabase.from('jobs').update(partial).eq('id', id).then(() => {})
+    if (hasSupabase) {
+      const row = {}
+      if ('title' in partial) row.title = partial.title
+      if ('clientId' in partial) row.client_id = partial.clientId
+      if ('status' in partial) row.status = partial.status
+      if ('start' in partial) row.start_date = partial.start || null
+      if ('end' in partial) row.end_date = partial.end || null
+      if ('notes' in partial) row.notes = partial.notes
+      if ('reminders' in partial) row.reminders = partial.reminders
+      if ('checklist' in partial) row.checklist = partial.checklist
+      if ('materials' in partial) row.materials = partial.materials
+      supabase.from('jobs').update(row).eq('id', id).then(() => {})
+    }
   }
 
   function removeJob(id) {
@@ -505,7 +518,7 @@ export default function App() {
 
         {tab === 'jobs' && (
           <Jobs
-            jobs={jobs} clients={clients} clientById={clientById}
+            jobs={jobs} clients={clients} clientById={clientById} estimates={estimates}
             addJob={addJob} updateJob={updateJob}
             onDelete={(id, title) => requestDelete('job', id, title)}
             onDeleteSeries={(seriesId, title) => requestDelete('job-series', seriesId, title)}
@@ -841,117 +854,6 @@ function EstimateBuilder({ estimate, clients, settings, onChange, onBack, onConv
         </div>
       </div>
     </>
-  )
-}
-
-/* ----------------------------- Jobs ----------------------------- */
-
-function Jobs({ jobs, clients, clientById, addJob, updateJob, onDelete, onDeleteSeries }) {
-  const [editingJob, setEditingJob] = useState(null)
-  const [creating, setCreating] = useState(false)
-
-  return (
-    <>
-      <PageHeader
-        title="Jobs"
-        subtitle="Schedule and track work through completion."
-        action={<button className="btn btn-amber" onClick={() => setCreating(true)}>+ New job</button>}
-      />
-      {jobs.length === 0 ? (
-        <EmptyState title="No jobs scheduled" subtitle="Convert an accepted estimate into a job, or create one directly." />
-      ) : (
-        <div className="card">
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Client</th><th>Job</th><th>Start</th><th>End</th><th>Status</th><th></th></tr></thead>
-              <tbody>
-                {jobs.map(j => (
-                  <tr key={j.id}>
-                    <td>{clientById(j.clientId) ? clientLabel(clientById(j.clientId)) : '—'}</td>
-                    <td>{j.title}{j.seriesId && <span className="series-badge">↻ recurring</span>}</td>
-                    <td className="figure">{j.start || '—'}</td>
-                    <td className="figure">{j.end || '—'}</td>
-                    <td>
-                      <select value={j.status} onChange={e => updateJob(j.id, { status: e.target.value })}
-                        style={{ border: 'none', background: 'transparent', fontWeight: 600, fontSize: 13 }}>
-                        {['scheduled', 'in_progress', 'complete'].map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-                      </select>
-                    </td>
-                    <td>
-                      <div className="row-actions">
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditingJob(j)}>Edit</button>
-                        <button className="btn btn-danger-ghost btn-sm" onClick={() => onDelete(j.id, j.title)}>Delete</button>
-                        {j.seriesId && (
-                          <button className="btn btn-danger-ghost btn-sm" onClick={() => onDeleteSeries(j.seriesId, j.title)}>Delete series</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {editingJob && (
-        <JobModal
-          job={editingJob}
-          clients={clients}
-          onClose={() => setEditingJob(null)}
-          onSave={(partial) => { updateJob(editingJob.id, partial); setEditingJob(null) }}
-        />
-      )}
-
-      {creating && (
-        <JobModal
-          clients={clients}
-          onClose={() => setCreating(false)}
-          onSave={(form) => { addJob(form); setCreating(false) }}
-        />
-      )}
-    </>
-  )
-}
-
-function JobModal({ job, clients, onClose, onSave }) {
-  const isEdit = Boolean(job)
-  const [form, setForm] = useState(isEdit
-    ? { title: job.title, clientId: job.clientId, start: job.start || '', end: job.end || '' }
-    : { title: '', clientId: clients[0]?.id ?? '', start: '', end: '' })
-  const [recurrence, setRecurrence] = useState(emptyRecurrence())
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2>{isEdit ? 'Edit job' : 'New job'}</h2>
-        <div className="field-row" style={{ gridTemplateColumns: '1fr', gap: 12 }}>
-          <div className="field"><label>Job title</label>
-            <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
-          <div className="field"><label>Client</label>
-            <select value={form.clientId ?? ''} onChange={e => setForm({ ...form, clientId: e.target.value })}>
-              {clients.map(c => <option key={c.id} value={c.id}>{clientLabel(c)}</option>)}
-            </select>
-          </div>
-          <div className="field-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
-            <div className="field"><label>Start date</label>
-              <input type="date" value={form.start} onChange={e => setForm({ ...form, start: e.target.value })} /></div>
-            <div className="field"><label>End date</label>
-              <input type="date" value={form.end} onChange={e => setForm({ ...form, end: e.target.value })} /></div>
-          </div>
-          {!isEdit && (
-            <RecurrenceFields recurrence={recurrence} onChange={setRecurrence} disabled={!form.start} />
-          )}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={!form.title || !form.clientId}
-            onClick={() => onSave(isEdit ? form : { ...form, recurrence })}>
-            {isEdit ? 'Save job' : 'Create job'}
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }
 

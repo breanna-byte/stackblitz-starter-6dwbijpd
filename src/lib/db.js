@@ -28,6 +28,7 @@ export function rowToJob(r) {
   return {
     id: r.id, estimateId: r.estimate_id, clientId: r.client_id, title: r.title,
     status: r.status, start: r.start_date || '', end: r.end_date || '', seriesId: r.series_id,
+    notes: r.notes || '', reminders: r.reminders || [], checklist: r.checklist || [], materials: r.materials || [],
   }
 }
 
