@@ -26,8 +26,6 @@ import Expenses from './pages/Expenses'
 import Bills from './pages/Bills'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
-import BankSync from './pages/BankSync'
-import { rowToBankAccount } from './lib/bank'
 
 const NAV = [
   { section: 'Overview', items: [{ key: 'dashboard', label: 'Dashboard', icon: '◧' }] },
@@ -47,7 +45,6 @@ const NAV = [
     { key: 'expenses', label: 'Expenses', icon: '↓' },
     { key: 'bills', label: 'Bills', icon: '▤' },
     { key: 'receipts', label: 'Receipt Ledger', icon: '📷' },
-    { key: 'bank', label: 'Bank Sync', icon: '🏦' },
     { key: 'reports', label: 'Profit & Loss', icon: '∑' },
   ]},
   { section: 'Business', items: [
@@ -69,9 +66,6 @@ export default function App() {
   const [todos, setTodos] = useState(hasSupabase ? [] : seedTodos)
   const [events, setEvents] = useState(hasSupabase ? [] : seedEvents)
   const [transactions, setTransactions] = useState(hasSupabase ? [] : seedTransactions)
-  // No demo-mode fallback: bank sync requires the real Supabase backend
-  // (Edge Functions + Teller), so this just stays empty in demo mode.
-  const [bankAccounts, setBankAccounts] = useState([])
   const [activeEstimateId, setActiveEstimateId] = useState(null)
   const [clientModalOpen, setClientModalOpen] = useState(false)
   const [editingClient, setEditingClient] = useState(null)
@@ -101,7 +95,7 @@ export default function App() {
         // Signed out: clear shared state so the next login doesn't briefly
         // flash the previous account's data.
         setClients([]); setEstimates([]); setJobs([]); setInvoices([])
-        setTodos([]); setEvents([]); setTransactions([]); setBankAccounts([])
+        setTodos([]); setEvents([]); setTransactions([])
         setSettings(defaultSettings)
       }
     })
@@ -123,8 +117,7 @@ export default function App() {
       supabase.from('events').select('*').order('date', { ascending: true }),
       supabase.from('transactions').select('*').order('date', { ascending: false }),
       supabase.from('user_settings').select('*').eq('user_id', session.user.id).maybeSingle(),
-      supabase.from('bank_accounts').select('*').order('created_at', { ascending: false }),
-    ]).then(([c, es, j, inv, td, ev, tx, us, ba]) => {
+    ]).then(([c, es, j, inv, td, ev, tx, us]) => {
       if (cancelled) return
       setClients((c.data || []).map(rowToClient))
       setEstimates((es.data || []).map(rowToEstimate))
@@ -134,23 +127,10 @@ export default function App() {
       setEvents((ev.data || []).map(rowToEvent))
       setTransactions((tx.data || []).map(rowToTransaction))
       setSettings(rowToSettings(us.data, defaultSettings))
-      setBankAccounts((ba.data || []).map(rowToBankAccount))
       setDataLoading(false)
     })
     return () => { cancelled = true }
   }, [session?.user?.id])
-
-  // Re-pulled after connecting a new bank account or running a manual
-  // sync, so the newly connected account / newly imported transactions
-  // show up without a full page reload.
-  async function refreshBankData() {
-    const [tx, ba] = await Promise.all([
-      supabase.from('transactions').select('*').order('date', { ascending: false }),
-      supabase.from('bank_accounts').select('*').order('created_at', { ascending: false }),
-    ])
-    setTransactions((tx.data || []).map(rowToTransaction))
-    setBankAccounts((ba.data || []).map(rowToBankAccount))
-  }
 
   // Live mode: save this user's settings to their own row, debounced so
   // typing in a text field doesn't fire a write per keystroke.
@@ -549,9 +529,6 @@ export default function App() {
         {tab === 'receipts' && (
           <Receipts transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction}
             removeTransaction={removeTransaction} />
-        )}
-        {tab === 'bank' && (
-          <BankSync bankAccounts={bankAccounts} onConnected={refreshBankData} onSynced={refreshBankData} />
         )}
         {tab === 'reports' && <Reports transactions={transactions} />}
 
