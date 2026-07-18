@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { PageHeader, EmptyState } from '../components/ui'
+import { PageHeader, EmptyState, TimeInput24 } from '../components/ui'
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -127,8 +127,8 @@ export default function Schedule({ events, addEvent: onAddEvent, removeEvent: on
                     onChange={e => setForm({ ...form, title: e.target.value })} />
                 </div>
                 <div className="field">
-                  <label>Time</label>
-                  <input type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} />
+                  <label>Time (24h)</label>
+                  <TimeInput24 value={form.time} onChange={time => setForm({ ...form, time })} />
                 </div>
               </div>
               <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} onClick={() => addEvent(modalDate)}>Add to calendar</button>
