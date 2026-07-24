@@ -2,11 +2,13 @@
 // A "transaction" row covers all three: type tells us which bucket it's in.
 // Bills are money you owe (unpaid = liability, paid = counts as an expense).
 
+const DEFAULT_CATEGORY = { income: 'Job payment', expense: 'Materials', bill: 'Insurance' }
+
 export function emptyTransaction(type = 'expense') {
   return {
     id: crypto.randomUUID(),
     type, // 'income' | 'expense' | 'bill'
-    category: type === 'income' ? 'Job payment' : 'Materials',
+    category: DEFAULT_CATEGORY[type] || 'Other',
     vendorOrSource: '',
     amount: 0,
     date: new Date().toISOString().slice(0, 10),

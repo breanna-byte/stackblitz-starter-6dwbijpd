@@ -24,8 +24,8 @@ backed by Supabase.
   estimate — there's a manual amount field for that case). Draft/sent/
   paid/overdue status with a "mark paid" action; edit dates/status/deposit
   % or delete; download as a branded PDF. Can be made **recurring**.
-- **Clients** — contact list with edit and delete (delete asks for
-  confirmation first), address, linked estimate count.
+- **Clients** — contact name + optional business name, edit and delete
+  (delete asks for confirmation first), address, linked estimate count.
 
 **Field**
 - **Schedule** — a real month-view calendar. Automatically plots job start/

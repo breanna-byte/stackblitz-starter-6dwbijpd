@@ -4,14 +4,23 @@
 // are only for the full row shape that comes back from a select().
 
 export function rowToClient(r) {
-  return { id: r.id, name: r.name, email: r.email || '', phone: r.phone || '', address: r.address || '' }
+  return {
+    id: r.id, contactName: r.contact_name, businessName: r.business_name || '',
+    email: r.email || '', phone: r.phone || '', address: r.address || '',
+  }
+}
+
+// The single display name used in tables, dropdowns, and PDFs: the
+// business name if there is one, otherwise the contact's own name.
+export function clientLabel(client) {
+  return client?.businessName || client?.contactName || '—'
 }
 
 export function rowToEstimate(r) {
   return {
     id: r.id, clientId: r.client_id, title: r.title, status: r.status,
-    taxRate: Number(r.tax_rate) || 0, globalDiscount: Number(r.global_discount) || 0,
-    items: r.items || [], createdAt: (r.created_at || '').slice(0, 10),
+    header: r.header || {}, lineItems: r.line_items || [],
+    markupPct: Number(r.markup_pct) || 0, taxRate: Number(r.tax_rate) || 0, terms: r.terms || '',
   }
 }
 
@@ -19,14 +28,16 @@ export function rowToJob(r) {
   return {
     id: r.id, estimateId: r.estimate_id, clientId: r.client_id, title: r.title,
     status: r.status, start: r.start_date || '', end: r.end_date || '', seriesId: r.series_id,
+    notes: r.notes || '', reminders: r.reminders || [], checklist: r.checklist || [], materials: r.materials || [],
   }
 }
 
 export function rowToInvoice(r) {
   return {
     id: r.id, estimateId: r.estimate_id, jobId: r.job_id, clientId: r.client_id,
-    status: r.status, issuedAt: r.issued_at || '', dueAt: r.due_at || '',
-    amount: r.amount === null ? null : Number(r.amount), depositPct: Number(r.deposit_pct) || 0,
+    paymentStatus: r.payment_status,
+    header: r.header || {}, lineItems: r.line_items || [],
+    markupPct: Number(r.markup_pct) || 0, taxRate: Number(r.tax_rate) || 0, terms: r.terms || '',
     seriesId: r.series_id,
   }
 }
@@ -44,6 +55,7 @@ export function rowToTransaction(r) {
     id: r.id, type: r.type, category: r.category, vendorOrSource: r.vendor_or_source || '',
     amount: Number(r.amount) || 0, date: r.date, dueDate: r.due_date || '', status: r.status,
     receiptImage: r.receipt_image, notes: r.notes || '', clientId: r.client_id,
+    seriesId: r.series_id,
   }
 }
 

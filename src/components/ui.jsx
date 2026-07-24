@@ -2,6 +2,7 @@ export const STATUS_LABEL = {
   draft: 'Draft', sent: 'Sent', accepted: 'Accepted', declined: 'Declined',
   scheduled: 'Scheduled', in_progress: 'In progress', complete: 'Complete',
   paid: 'Paid', overdue: 'Overdue', unpaid: 'Unpaid', recorded: 'Recorded',
+  income: 'Income', expense: 'Expense', bill: 'Bill',
 }
 
 export function Stat({ label, value, color, sub }) {
@@ -38,6 +39,28 @@ export function PageHeader({ title, subtitle, action }) {
 
 export function Badge({ status }) {
   return <span className={`badge badge-${status}`}>{STATUS_LABEL[status] ?? status}</span>
+}
+
+const HOURS = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0'))
+const MINUTES = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55']
+
+// Military-time-only time picker (e.g. "23:00") — deliberately not the
+// native <input type="time">, whose picker widget shows 12-hour AM/PM in
+// some browsers/locales regardless of the underlying value, which is the
+// opposite of what a fixed 24-hour display is supposed to guarantee.
+export function TimeInput24({ value, onChange }) {
+  const [h, m] = (value || '00:00').split(':')
+  return (
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      <select className="figure" value={HOURS.includes(h) ? h : '00'} onChange={e => onChange(`${e.target.value}:${m}`)}>
+        {HOURS.map(hh => <option key={hh} value={hh}>{hh}</option>)}
+      </select>
+      <span>:</span>
+      <select className="figure" value={MINUTES.includes(m) ? m : '00'} onChange={e => onChange(`${h}:${e.target.value}`)}>
+        {MINUTES.map(mm => <option key={mm} value={mm}>{mm}</option>)}
+      </select>
+    </div>
+  )
 }
 
 export function ConfirmDialog({ title, message, confirmLabel = 'Delete', danger = true, onConfirm, onCancel }) {

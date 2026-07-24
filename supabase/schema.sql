@@ -9,28 +9,53 @@ create extension if not exists "pgcrypto";
 create table if not exists clients (
   id uuid primary key default gen_random_uuid(),
   owner uuid references auth.users(id) default auth.uid(),
-  name text not null,
+  contact_name text not null,
+  business_name text,
   email text,
   phone text,
   address text,
   created_at timestamptz default now()
 );
 
+-- Safe to re-run: migrates a clients table created before the
+-- contact/business name split existed.
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_name = 'clients' and column_name = 'name')
+     and not exists (select 1 from information_schema.columns where table_name = 'clients' and column_name = 'contact_name') then
+    alter table clients rename column name to contact_name;
+  end if;
+end $$;
+alter table clients add column if not exists business_name text;
+
+-- Estimates and invoices share the same document shape: a `header` object
+-- (record number, issue/due dates, a snapshot of the client's details —
+-- see emptyHeader in src/lib/calc.js) plus a `line_items` array
+-- ([{id,description,unitType,qty,unitCost,category}], category one of
+-- Labor/Materials/Subcontractor/Equipment). markup_pct + tax_rate live at
+-- the whole-document level, not per line — see computeDocumentTotals.
 create table if not exists estimates (
   id uuid primary key default gen_random_uuid(),
   owner uuid references auth.users(id) default auth.uid(),
   client_id uuid references clients(id) on delete set null,
   title text not null default 'Untitled estimate',
   status text not null default 'draft' check (status in ('draft','sent','accepted','declined')),
+  header jsonb not null default '{}',
+  line_items jsonb not null default '[]',
+  markup_pct numeric not null default 0,
   tax_rate numeric not null default 0,
-  global_discount numeric not null default 0,
-  -- line items live as jsonb: [{id,type,description,qty,unitCost,markup,taxable}, ...]
-  -- keeping the calculator's line items together in one column avoids a
-  -- join-heavy schema and matches how the estimate is always read/written
-  -- as a whole document in the UI.
-  items jsonb not null default '[]',
+  terms text,
   created_at timestamptz default now()
 );
+
+-- Safe to re-run: migrates an estimates table from the old per-line
+-- markup/taxable/discount model to the shared header+line_items model.
+alter table estimates add column if not exists header jsonb not null default '{}';
+alter table estimates add column if not exists line_items jsonb not null default '[]';
+alter table estimates add column if not exists markup_pct numeric not null default 0;
+alter table estimates add column if not exists terms text;
+alter table estimates drop column if exists items;
+alter table estimates drop column if exists global_discount;
 
 create table if not exists jobs (
   id uuid primary key default gen_random_uuid(),
@@ -44,8 +69,21 @@ create table if not exists jobs (
   -- shared by every generated occurrence of a recurring job; null for
   -- one-off jobs. See src/lib/recurrence.js.
   series_id uuid,
+  notes text,
+  -- reminders: [{id,text}], checklist: [{id,text,done}],
+  -- materials: [{id,name,qty}] — see src/pages/Jobs.jsx.
+  reminders jsonb not null default '[]',
+  checklist jsonb not null default '[]',
+  materials jsonb not null default '[]',
   created_at timestamptz default now()
 );
+
+-- Safe to re-run: adds job-detail fields to projects that ran an earlier
+-- version of this schema before they existed.
+alter table jobs add column if not exists notes text;
+alter table jobs add column if not exists reminders jsonb not null default '[]';
+alter table jobs add column if not exists checklist jsonb not null default '[]';
+alter table jobs add column if not exists materials jsonb not null default '[]';
 
 create table if not exists invoices (
   id uuid primary key default gen_random_uuid(),
@@ -53,16 +91,34 @@ create table if not exists invoices (
   estimate_id uuid references estimates(id) on delete set null,
   job_id uuid references jobs(id) on delete set null,
   client_id uuid references clients(id) on delete set null,
-  status text not null default 'draft' check (status in ('draft','sent','paid','overdue')),
-  issued_at date default now(),
-  due_at date,
-  amount numeric,
-  deposit_pct numeric default 0,
+  -- Stored state is just paid/unpaid — "Overdue" is derived (unpaid past
+  -- header.dueDate), not a third stored value, so it can never drift out
+  -- of sync with the due date. See src/pages/Invoices.jsx.
+  payment_status text not null default 'unpaid' check (payment_status in ('unpaid','paid')),
+  header jsonb not null default '{}',
+  line_items jsonb not null default '[]',
+  markup_pct numeric not null default 0,
+  tax_rate numeric not null default 0,
+  terms text,
   -- shared by every generated occurrence of a recurring invoice (e.g. a
   -- monthly retainer); null for one-off invoices.
   series_id uuid,
   created_at timestamptz default now()
 );
+
+-- Safe to re-run: migrates an invoices table from the old flat-amount
+-- model to the shared header+line_items model.
+alter table invoices add column if not exists payment_status text not null default 'unpaid';
+alter table invoices add column if not exists header jsonb not null default '{}';
+alter table invoices add column if not exists line_items jsonb not null default '[]';
+alter table invoices add column if not exists markup_pct numeric not null default 0;
+alter table invoices add column if not exists tax_rate numeric not null default 0;
+alter table invoices add column if not exists terms text;
+alter table invoices drop column if exists status;
+alter table invoices drop column if exists issued_at;
+alter table invoices drop column if exists due_at;
+alter table invoices drop column if exists amount;
+alter table invoices drop column if exists deposit_pct;
 
 create table if not exists todos (
   id uuid primary key default gen_random_uuid(),
@@ -101,8 +157,26 @@ create table if not exists transactions (
   receipt_image text,
   notes text,
   client_id uuid references clients(id) on delete set null,
+  -- shared by every generated occurrence of a recurring bill; null for
+  -- one-off transactions and for income/expenses (only bills can recur).
+  series_id uuid,
   created_at timestamptz default now()
 );
+
+-- Safe to re-run: adds series_id to projects that ran an earlier version
+-- of this schema before recurring bills existed.
+alter table transactions add column if not exists series_id uuid;
+
+-- Bank sync was tried (Plaid, then Teller) and dropped. These statements
+-- clean up anything an earlier run of this file may have created — safe
+-- to run whether or not those tables ever existed here.
+drop table if exists bank_accounts;
+drop table if exists teller_enrollments;
+drop table if exists plaid_items;
+alter table transactions drop column if exists teller_transaction_id;
+alter table transactions drop column if exists plaid_transaction_id;
+alter table transactions drop column if exists bank_account_id;
+alter table transactions drop column if exists pending;
 
 -- Per-person PDF branding / business-info preferences. Unlike every table
 -- above (shared across the whole team, see the RLS policies below), this

@@ -1,36 +1,48 @@
 export const seedClients = [
-  { id: 'c1', name: 'Marisol Ortega', email: 'marisol.ortega@example.com', phone: '(970) 555-0148', address: '412 Willow Creek Dr, Fort Collins, CO' },
-  { id: 'c2', name: 'Dan Whitfield', email: 'dan.whitfield@example.com', phone: '(970) 555-0193', address: '88 Timberline Rd, Loveland, CO' },
-  { id: 'c3', name: 'Greeley Union School District', email: 'facilities@example-gusd.org', phone: '(970) 555-0122', address: '1900 8th Ave, Greeley, CO' },
+  { id: 'c1', contactName: 'Marisol Ortega', businessName: '', email: 'marisol.ortega@example.com', phone: '(970) 555-0148', address: '412 Willow Creek Dr, Fort Collins, CO' },
+  { id: 'c2', contactName: 'Dan Whitfield', businessName: '', email: 'dan.whitfield@example.com', phone: '(970) 555-0193', address: '88 Timberline Rd, Loveland, CO' },
+  { id: 'c3', contactName: 'Facilities Dept.', businessName: 'Greeley Union School District', email: 'facilities@example-gusd.org', phone: '(970) 555-0122', address: '1900 8th Ave, Greeley, CO' },
 ]
 
 export const seedEstimates = [
   {
-    id: 'e1', clientId: 'c1', title: 'Kitchen backsplash & outlet relocation',
-    status: 'sent', taxRate: 4.2, globalDiscount: 0, createdAt: '2026-06-28',
-    items: [
-      { id: 'i1', type: 'material', description: 'Subway tile, 10 sq ft box', qty: 6, unitCost: 42, markup: 30, taxable: true },
-      { id: 'i2', type: 'material', description: 'Thinset & grout', qty: 1, unitCost: 65, markup: 25, taxable: true },
-      { id: 'i3', type: 'labor', description: 'Tile install labor', qty: 14, unitCost: 38, markup: 45, taxable: false },
-      { id: 'i4', type: 'labor', description: 'Electrician - outlet move', qty: 3, unitCost: 55, markup: 40, taxable: false },
+    id: 'e1', clientId: 'c1', title: 'Kitchen backsplash & outlet relocation', status: 'sent',
+    header: {
+      recordNumber: 'EST-0001', issueDate: '2026-06-28', dueDate: null,
+      client: { contactName: 'Marisol Ortega', businessName: '', email: 'marisol.ortega@example.com', phone: '(970) 555-0148', address: '412 Willow Creek Dr, Fort Collins, CO' },
+    },
+    lineItems: [
+      { id: 'i1', description: 'Subway tile, 10 sq ft box', unitType: 'box', qty: 6, unitCost: 42, category: 'Materials' },
+      { id: 'i2', description: 'Thinset & grout', unitType: 'ea', qty: 1, unitCost: 65, category: 'Materials' },
+      { id: 'i3', description: 'Tile install labor', unitType: 'hrs', qty: 14, unitCost: 38, category: 'Labor' },
+      { id: 'i4', description: 'Electrician - outlet move', unitType: 'hrs', qty: 3, unitCost: 55, category: 'Labor' },
     ],
+    markupPct: 30, taxRate: 4.2, terms: '',
   },
   {
-    id: 'e2', clientId: 'c2', title: 'Deck rebuild - 320 sq ft',
-    status: 'draft', taxRate: 4.2, globalDiscount: 5, createdAt: '2026-07-02',
-    items: [
-      { id: 'i5', type: 'material', description: 'Pressure-treated joists & framing', qty: 1, unitCost: 1180, markup: 22, taxable: true },
-      { id: 'i6', type: 'material', description: 'Composite decking boards', qty: 320, unitCost: 6.2, markup: 28, taxable: true },
-      { id: 'i7', type: 'labor', description: 'Demo + rebuild crew (2 workers)', qty: 40, unitCost: 42, markup: 45, taxable: false },
+    id: 'e2', clientId: 'c2', title: 'Deck rebuild - 320 sq ft', status: 'draft',
+    header: {
+      recordNumber: 'EST-0002', issueDate: '2026-07-02', dueDate: null,
+      client: { contactName: 'Dan Whitfield', businessName: '', email: 'dan.whitfield@example.com', phone: '(970) 555-0193', address: '88 Timberline Rd, Loveland, CO' },
+    },
+    lineItems: [
+      { id: 'i5', description: 'Pressure-treated joists & framing', unitType: 'lot', qty: 1, unitCost: 1180, category: 'Materials' },
+      { id: 'i6', description: 'Composite decking boards', unitType: 'sq ft', qty: 320, unitCost: 6.2, category: 'Materials' },
+      { id: 'i7', description: 'Demo + rebuild crew (2 workers)', unitType: 'hrs', qty: 40, unitCost: 42, category: 'Labor' },
     ],
+    markupPct: 25, taxRate: 4.2, terms: '',
   },
   {
-    id: 'e3', clientId: 'c3', title: 'Gym floor refinish - Building B',
-    status: 'accepted', taxRate: 4.2, globalDiscount: 0, createdAt: '2026-06-14',
-    items: [
-      { id: 'i8', type: 'material', description: 'Polyurethane finish, 5 gal', qty: 4, unitCost: 210, markup: 20, taxable: true },
-      { id: 'i9', type: 'labor', description: 'Sanding & refinish crew', qty: 60, unitCost: 40, markup: 45, taxable: false },
+    id: 'e3', clientId: 'c3', title: 'Gym floor refinish - Building B', status: 'accepted',
+    header: {
+      recordNumber: 'EST-0003', issueDate: '2026-06-14', dueDate: null,
+      client: { contactName: 'Facilities Dept.', businessName: 'Greeley Union School District', email: 'facilities@example-gusd.org', phone: '(970) 555-0122', address: '1900 8th Ave, Greeley, CO' },
+    },
+    lineItems: [
+      { id: 'i8', description: 'Polyurethane finish, 5 gal', unitType: 'pail', qty: 4, unitCost: 210, category: 'Materials' },
+      { id: 'i9', description: 'Sanding & refinish crew', unitType: 'hrs', qty: 60, unitCost: 40, category: 'Labor' },
     ],
+    markupPct: 25, taxRate: 4.2, terms: '',
   },
 ]
 
@@ -40,7 +52,18 @@ export const seedJobs = [
 ]
 
 export const seedInvoices = [
-  { id: 'v1', estimateId: 'e3', jobId: 'j1', clientId: 'c3', status: 'sent', issuedAt: '2026-07-01', dueAt: '2026-07-15', amount: null, depositPct: 30 },
+  {
+    id: 'v1', estimateId: 'e3', jobId: 'j1', clientId: 'c3', paymentStatus: 'unpaid', seriesId: null,
+    header: {
+      recordNumber: 'INV-0001', issueDate: '2026-07-01', dueDate: '2026-07-15',
+      client: { contactName: 'Facilities Dept.', businessName: 'Greeley Union School District', email: 'facilities@example-gusd.org', phone: '(970) 555-0122', address: '1900 8th Ave, Greeley, CO' },
+    },
+    lineItems: [
+      { id: 'i8v', description: 'Polyurethane finish, 5 gal', unitType: 'pail', qty: 4, unitCost: 210, category: 'Materials' },
+      { id: 'i9v', description: 'Sanding & refinish crew', unitType: 'hrs', qty: 60, unitCost: 40, category: 'Labor' },
+    ],
+    markupPct: 25, taxRate: 4.2, terms: '',
+  },
 ]
 
 export const seedTodos = [

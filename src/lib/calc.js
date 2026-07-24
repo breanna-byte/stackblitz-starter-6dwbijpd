@@ -1,62 +1,76 @@
-// Core pricing engine — this is the "automatic calculator" behind every
-// estimate. Each line item is either a material/product line (qty × unit
-// cost) or a labor line (hours × hourly rate). A per-line markup turns raw
-// cost into the price the customer sees. Totals then roll up cost, price,
-// margin, and tax so a contractor can see profitability while building the
-// quote, not after.
+// Shared document engine behind both Estimates and Invoices — same header
+// + line-item shape, same calculation, so the two pages stay structurally
+// identical and any fix here applies to both at once.
+//
+// A document's line items store raw *cost* (qty × unit cost), not a
+// customer-facing price — markup is applied once, at the whole-document
+// level, via markupPct. That's a deliberate difference from a per-line
+// markup model: it makes "what's my margin on this job" a single number
+// instead of a per-line average, and it's what lets the Client Preview
+// hide unit costs entirely while still showing an honest per-line price
+// (see previewLinePrice below).
 
-export function emptyLineItem(type = 'material') {
-  return {
-    id: crypto.randomUUID(),
-    type, // 'material' | 'labor'
-    description: '',
-    qty: 1,
-    unitCost: 0,   // material: cost per unit | labor: cost per hour (what it costs you)
-    markup: type === 'labor' ? 40 : 25, // % markup applied to cost to get customer price
-    taxable: type === 'material',
-  }
+export const CATEGORIES = ['Labor', 'Materials', 'Subcontractor', 'Equipment']
+
+export function emptyLineItem(category = 'Labor') {
+  return { id: crypto.randomUUID(), description: '', unitType: '', qty: 1, unitCost: 0, category }
 }
 
-export function lineCost(item) {
-  const qty = Number(item.qty) || 0
-  const unitCost = Number(item.unitCost) || 0
-  return qty * unitCost
+export function lineItemTotal(item) {
+  return (Number(item.qty) || 0) * (Number(item.unitCost) || 0)
 }
 
-export function linePrice(item) {
-  const cost = lineCost(item)
-  const markup = Number(item.markup) || 0
-  return cost * (1 + markup / 100)
+// The price a client sees for one line: its cost-basis total, scaled by
+// the same markup % applied to the whole document, so line prices always
+// add up to the document's priced subtotal without exposing raw cost.
+export function previewLinePrice(item, markupPct) {
+  return lineItemTotal(item) * (1 + (Number(markupPct) || 0) / 100)
 }
 
-export function lineMargin(item) {
-  const price = linePrice(item)
-  const cost = lineCost(item)
-  if (price <= 0) return 0
-  return ((price - cost) / price) * 100
-}
-
-export function computeEstimateTotals(items, { taxRate = 0, globalDiscount = 0 } = {}) {
-  const totalCost = items.reduce((sum, it) => sum + lineCost(it), 0)
-  const subtotal = items.reduce((sum, it) => sum + linePrice(it), 0)
-  const discountAmt = subtotal * (Number(globalDiscount) / 100)
-  const taxableBase = items
-    .filter(it => it.taxable)
-    .reduce((sum, it) => sum + linePrice(it), 0) * (1 - Number(globalDiscount) / 100)
-  const taxAmt = taxableBase * (Number(taxRate) / 100)
-  const total = subtotal - discountAmt + taxAmt
-  const profit = subtotal - discountAmt - totalCost
-  const marginPct = subtotal - discountAmt > 0 ? (profit / (subtotal - discountAmt)) * 100 : 0
+export function computeDocumentTotals(lineItems, { markupPct = 0, taxRate = 0 } = {}) {
+  const subtotal = lineItems.reduce((sum, it) => sum + lineItemTotal(it), 0)
+  const markupAmount = subtotal * (Number(markupPct) / 100)
+  const pricedSubtotal = subtotal + markupAmount
+  const taxAmount = pricedSubtotal * (Number(taxRate) / 100)
+  const total = pricedSubtotal + taxAmount
 
   return {
-    totalCost,
-    subtotal,
-    discountAmt,
-    taxAmt,
+    subtotal,       // raw cost basis (internal only — never shown to the client)
+    markupAmount,   // == profit
+    pricedSubtotal, // what the client sees as "Subtotal"
+    taxAmount,
     total,
-    profit,
-    marginPct,
+    profit: markupAmount,
   }
+}
+
+export function emptyHeader({ recordNumber = '', client = null, issueDate = null, dueDate = null } = {}) {
+  return {
+    recordNumber,
+    issueDate: issueDate || new Date().toISOString().slice(0, 10),
+    dueDate,
+    // A snapshot of the client's details at creation time, not a live
+    // reference — so an old estimate/invoice still shows who it was
+    // actually sent to even if that client's info changes (or the client
+    // is deleted) later. Company info is deliberately NOT snapshotted
+    // here; both views read it live from Settings, same as PDF export
+    // already did, so a business-info fix applies to every document.
+    client: client ? {
+      contactName: client.contactName, businessName: client.businessName || '',
+      email: client.email || '', phone: client.phone || '', address: client.address || '',
+    } : null,
+  }
+}
+
+// e.g. nextRecordNumber('EST', estimates) -> 'EST-0007'. Based on the
+// highest existing number rather than list length, so deleting a record
+// never causes the next one created to reuse a number.
+export function nextRecordNumber(prefix, existingList) {
+  const max = existingList.reduce((m, doc) => {
+    const n = Number((doc.header?.recordNumber || '').split('-')[1])
+    return Number.isFinite(n) && n > m ? n : m
+  }, 0)
+  return `${prefix}-${String(max + 1).padStart(4, '0')}`
 }
 
 export function formatCurrency(n) {
